@@ -7,6 +7,7 @@ import * as NodeURL from "node:url";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { KiroSettings, ProviderDriverKind, ThreadId } from "@t3tools/contracts";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
@@ -19,20 +20,27 @@ const decodeKiroSettings = Schema.decodeSync(KiroSettings);
 const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const mockAgentPath = NodePath.join(__dirname, "../../../scripts/acp-mock-agent.ts");
 
-async function makeMockAgentWrapper() {
+async function makeMockAgentWrapper(platform: NodeJS.Platform) {
   const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "kiro-acp-mock-"));
-  const wrapperPath = NodePath.join(directory, "fake-kiro-cli.sh");
-  const script = `#!/bin/sh
+  const isWindows = platform === "win32";
+  const wrapperPath = NodePath.join(
+    directory,
+    isWindows ? "fake-kiro-cli.cmd" : "fake-kiro-cli.sh",
+  );
+  const script = isWindows
+    ? `@echo off\r\n${JSON.stringify(process.execPath)} ${JSON.stringify(mockAgentPath)} %*\r\n`
+    : `#!/bin/sh
 exec ${JSON.stringify(process.execPath)} ${JSON.stringify(mockAgentPath)} "$@"
 `;
   await NodeFSP.writeFile(wrapperPath, script, "utf8");
-  await NodeFSP.chmod(wrapperPath, 0o755);
+  if (!isWindows) await NodeFSP.chmod(wrapperPath, 0o755);
   return wrapperPath;
 }
 
 it.effect("KiroAdapter maps a standard ACP prompt to canonical runtime events", () =>
   Effect.gen(function* () {
-    const wrapperPath = yield* Effect.promise(makeMockAgentWrapper);
+    const platform = yield* HostProcessPlatform;
+    const wrapperPath = yield* Effect.promise(() => makeMockAgentWrapper(platform));
     const adapter = yield* makeKiroAdapter(
       decodeKiroSettings({ enabled: true, binaryPath: wrapperPath }),
     );

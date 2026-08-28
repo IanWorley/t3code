@@ -1,5 +1,8 @@
-import { ProviderDriverKind } from "@t3tools/contracts";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
+import { ProviderDriverKind } from "@t3tools/contracts";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { resolveSpawnCommand, SpawnExecutableResolution } from "@t3tools/shared/shell";
 import * as Effect from "effect/Effect";
 import { describe, expect } from "vite-plus/test";
 
@@ -31,6 +34,37 @@ describe("KiroAcpSupport", () => {
       env: { KIRO_API_KEY: "test" },
     });
   });
+
+  it.effect("resolves the native Kiro executable on Windows", () =>
+    Effect.gen(function* () {
+      const environment = {
+        PATH: "C:\\Program Files\\Kiro-Cli",
+        PATHEXT: ".COM;.EXE;.BAT;.CMD",
+      };
+      const spawnInput = buildKiroAcpSpawnInput(
+        { binaryPath: "kiro-cli" },
+        "C:\\Users\\developer\\project",
+        environment,
+        "full-access",
+      );
+      const command = yield* resolveSpawnCommand(spawnInput.command, spawnInput.args, {
+        env: environment,
+      });
+
+      expect(command).toEqual({
+        command: "C:\\Program Files\\Kiro-Cli\\kiro-cli.exe",
+        args: ["acp", "--trust-all-tools"],
+        shell: false,
+      });
+    }).pipe(
+      Effect.provide(NodeServices.layer),
+      Effect.provideService(HostProcessPlatform, "win32"),
+      Effect.provideService(
+        SpawnExecutableResolution,
+        () => "C:\\Program Files\\Kiro-Cli\\kiro-cli.exe",
+      ),
+    ),
+  );
 
   it("uses Kiro's auto model when no model is selected", () => {
     expect(resolveKiroAcpBaseModelId(undefined)).toBe("auto");
