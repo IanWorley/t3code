@@ -95,8 +95,9 @@ kiro-cli --version
 kiro-cli login
 ```
 
-T3 Code resolves the native `kiro-cli.exe` through Windows `PATH` and `PATHEXT`. If T3 Code was
-already running during installation, restart it or set the full executable path in **Binary path**.
+T3 Code checks both Windows `PATH`/`PATHEXT` and Kiro's standard
+`C:\Program Files\Kiro-Cli` install directory for `kiro-cli.exe`. If you use a custom installation
+directory, set the full executable path in **Binary path**.
 
 Run the login command on the machine running the T3 Code server, not on the device you browse
 from.

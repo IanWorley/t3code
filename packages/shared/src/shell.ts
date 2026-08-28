@@ -18,6 +18,7 @@ const SHELL_ENV_NAME_PATTERN = /^[A-Z0-9_]+$/;
 const WINDOWS_PATH_DELIMITER = ";";
 const POSIX_PATH_DELIMITER = ":";
 const WINDOWS_SHELL_CANDIDATES = ["pwsh.exe", "powershell.exe"] as const;
+const WINDOWS_KIRO_CLI_DIRECTORY_NAME = "Kiro-Cli";
 
 type ExecFileSyncLike = (
   file: string,
@@ -677,8 +678,11 @@ export function resolveKnownWindowsCliDirs(env: NodeJS.ProcessEnv): ReadonlyArra
   const appData = env.APPDATA?.trim();
   const localAppData = env.LOCALAPPDATA?.trim();
   const userProfile = env.USERPROFILE?.trim();
+  const programFiles =
+    env.ProgramW6432?.trim() || env.ProgramFiles?.trim() || env.PROGRAMFILES?.trim();
 
   return [
+    ...(programFiles ? [`${programFiles}\\${WINDOWS_KIRO_CLI_DIRECTORY_NAME}`] : []),
     ...(appData ? [`${appData}\\npm`] : []),
     ...(localAppData ? [`${localAppData}\\Programs\\nodejs`, `${localAppData}\\Volta\\bin`] : []),
     ...(localAppData ? [`${localAppData}\\pnpm`] : []),
