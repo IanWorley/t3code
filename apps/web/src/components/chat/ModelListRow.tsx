@@ -38,6 +38,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
   unavailable?: boolean;
   jumpLabel?: string | null;
   disabledReason?: string | null;
+  advisoryReason?: string | null;
   onToggleFavorite: () => void;
 }) {
   const ProviderIcon = PROVIDER_ICON_BY_PROVIDER[props.driverKind] ?? null;
@@ -57,6 +58,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
         "hover:bg-[color-mix(in_srgb,var(--popover)_90%,var(--contrast-foreground))] data-highlighted:bg-[color-mix(in_srgb,var(--popover)_90%,var(--contrast-foreground))] data-selected:bg-foreground/[0.08] data-selected:text-foreground data-selected:ring-0 [&[data-highlighted][data-selected]]:bg-[color-mix(in_srgb,var(--popover)_90%,var(--contrast-foreground))]",
         props.disabledReason &&
           "data-disabled:pointer-events-auto data-disabled:cursor-not-allowed data-disabled:hover:bg-transparent",
+        props.advisoryReason && !props.disabledReason && "opacity-50",
       )}
     >
       <div className="min-w-0 flex-1 text-left">
@@ -134,7 +136,8 @@ export const ModelListRow = memo(function ModelListRow(props: {
     </ComboboxItem>
   );
 
-  if (!props.disabledReason) {
+  const tooltipReason = props.disabledReason ?? props.advisoryReason;
+  if (!tooltipReason) {
     return row;
   }
 
@@ -142,7 +145,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
     <Tooltip>
       <TooltipTrigger render={row} />
       <TooltipPopup side="left" align="center" className="max-w-64 text-balance leading-snug">
-        {props.disabledReason}
+        {tooltipReason}
       </TooltipPopup>
     </Tooltip>
   );

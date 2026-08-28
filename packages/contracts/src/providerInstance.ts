@@ -50,6 +50,8 @@ const PROVIDER_SLUG_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 const ENVIRONMENT_VARIABLE_NAME_MAX_CHARS = 128;
 const ENVIRONMENT_VARIABLE_NAME_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
+export const VIBEPROXY_CLIENT_API_KEY_ENV = "T3CODE_VIBEPROXY_API_KEY";
+
 const slugSchema = TrimmedNonEmptyString.check(
   Schema.isMaxLength(PROVIDER_SLUG_MAX_CHARS),
   Schema.isPattern(PROVIDER_SLUG_PATTERN),
@@ -112,6 +114,11 @@ export type ProviderInstanceEnvironmentVariable = typeof ProviderInstanceEnviron
 export const ProviderInstanceEnvironment = Schema.Array(ProviderInstanceEnvironmentVariable);
 export type ProviderInstanceEnvironment = typeof ProviderInstanceEnvironment.Type;
 
+export const ProviderInstanceVibeProxyConfig = Schema.Struct({
+  enabled: Schema.Boolean,
+});
+export type ProviderInstanceVibeProxyConfig = typeof ProviderInstanceVibeProxyConfig.Type;
+
 /**
  * Envelope shape for a provider instance configuration in `ServerSettings`.
  *
@@ -126,6 +133,7 @@ export const ProviderInstanceConfig = Schema.Struct({
   displayName: Schema.optional(TrimmedNonEmptyString),
   accentColor: Schema.optional(TrimmedNonEmptyString),
   environment: Schema.optionalKey(ProviderInstanceEnvironment),
+  vibeProxy: Schema.optionalKey(ProviderInstanceVibeProxyConfig),
   enabled: Schema.optionalKey(Schema.Boolean),
   config: Schema.optionalKey(Schema.Unknown),
 });

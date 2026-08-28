@@ -41,6 +41,7 @@ import {
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
+import { getVibeProxyModelAdvisory } from "../../vibeProxyPresentation";
 
 type ModelPickerItem = {
   slug: string;
@@ -786,6 +787,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     }
                     const disabledReason =
                       getModelDisabledReason?.(model.instanceId, model.slug) ?? null;
+                    const advisoryReason = getVibeProxyModelAdvisory(
+                      entryByInstanceId.get(model.instanceId),
+                      model.slug,
+                    );
                     return (
                       <ModelListRow
                         key={modelKey}
@@ -808,6 +813,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         unavailable={model.isUnavailable === true}
                         jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}
                         disabledReason={disabledReason}
+                        advisoryReason={advisoryReason}
                         onToggleFavorite={() => toggleFavorite(model.instanceId, model.slug)}
                       />
                     );

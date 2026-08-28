@@ -9,6 +9,7 @@ import {
   shouldShowInstanceBadge,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
+import { describeVibeProxyInstance } from "../../vibeProxyPresentation";
 
 /**
  * Build the hover tooltip for an instance button. Mirrors the old
@@ -145,6 +146,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const isHovered = hoveredInstanceId === entry.instanceId;
             const showNewBadge = props.newBadgeInstanceIds?.has(entry.instanceId) ?? false;
             const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
+            const vibeProxyTooltip = describeVibeProxyInstance(entry);
 
             const tooltip = isUnavailable
               ? describeUnavailableInstance(entry)
@@ -152,7 +154,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                 ? (props.getDisabledInstanceTooltip?.(entry) ?? entry.displayName)
                 : showNewBadge
                   ? `${entry.displayName} — New`
-                  : entry.displayName;
+                  : (vibeProxyTooltip ?? entry.displayName);
 
             const button = (
               <button
@@ -198,6 +200,17 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                     ? { badgeClassName: "h-3 min-w-3 px-0.5 text-[7px]" }
                     : {})}
                 />
+                {entry.snapshot.vibeProxy?.enabled ? (
+                  <span
+                    className={cn(
+                      "pointer-events-none absolute right-0 bottom-0 rounded-sm border border-border bg-background px-0.5 text-[6px] font-bold leading-2.5",
+                      !entry.snapshot.vibeProxy.reachable && "text-warning-foreground",
+                    )}
+                    aria-hidden
+                  >
+                    VP
+                  </span>
+                ) : null}
                 {showNewBadge ? (
                   <span className={NEW_BADGE_CLASS} aria-hidden>
                     <SparklesIcon className="size-2" />

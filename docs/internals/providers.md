@@ -102,6 +102,20 @@ probes, respect the `enableProviderUpdateChecks` setting, and never fail a provi
 Codex and Claude drivers apply the classification to every snapshot with `applyModelManifest`;
 driver kinds absent from the manifest have no legacy concept.
 
+## VibeProxy routing
+
+Codex and Claude instances can opt into VibeProxy through the provider-instance envelope. The
+server discovers only the loopback host and port from VibeProxy's merged config, probes health and
+models during the existing provider refresh lifecycle, and publishes redacted status on that
+instance's provider snapshot. Client API keys use the existing sensitive provider-environment
+secret path and never appear in snapshots.
+
+Routing is applied only to the effective process configuration. Codex receives a T3-owned custom
+model-provider override; Claude receives an Anthropic gateway environment overlay. Neither driver
+edits harness config files. Enabled routing fails closed when discovery or health fails, so an
+explicit proxy choice never silently becomes a direct upstream request. Proxy-only model IDs are
+projected as custom models while exact built-in matches retain their existing metadata.
+
 ## Attachment access
 
 The server stores uploaded attachments in its attachment directory, outside the project workspace.

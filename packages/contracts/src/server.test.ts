@@ -45,6 +45,25 @@ describe("ServerProvider", () => {
     expect(parsed.skills).toEqual([]);
     expect(parsed.versionAdvisory).toBeUndefined();
     expect(parsed.updateState).toBeUndefined();
+    expect(parsed.vibeProxy).toBeUndefined();
+  });
+
+  it("decodes per-instance VibeProxy status", () => {
+    const parsed = decodeServerProvider({
+      ...baseProviderSnapshot,
+      vibeProxy: {
+        enabled: true,
+        endpoint: "http://127.0.0.1:8318",
+        reachable: true,
+        models: ["gpt-5.6-sol", "claude-sonnet-5"],
+      },
+    });
+    expect(parsed.vibeProxy).toEqual({
+      enabled: true,
+      endpoint: "http://127.0.0.1:8318",
+      reachable: true,
+      models: ["gpt-5.6-sol", "claude-sonnet-5"],
+    });
   });
 
   it("defaults one-click update support when decoding older advisory snapshots", () => {
