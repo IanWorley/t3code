@@ -15,6 +15,7 @@ orchestration layer does not know which one is behind a thread.
 | `claudeAgent` | [`Drivers/ClaudeDriver.ts`][claude]     |
 | `cursor`      | [`Drivers/CursorDriver.ts`][cursor]     |
 | `grok`        | [`Drivers/GrokDriver.ts`][grok]         |
+| `kiro`        | [`Drivers/KiroDriver.ts`][kiro]         |
 | `pi`          | [`Drivers/PiDriver.ts`][pi]             |
 | `opencode`    | [`Drivers/OpenCodeDriver.ts`][opencode] |
 
@@ -107,7 +108,7 @@ The server stores uploaded attachments in its attachment directory, outside the 
 `ProviderService` adds the absolute path of each attachment to the turn text, then passes every
 attachment to the provider adapter. Each adapter decides what its provider ingests natively:
 
-- Codex, Claude, Cursor, Grok, and Pi send images as native image inputs and skip generic files. For
+- Codex, Claude, Cursor, Grok, Kiro, and Pi send images as native image inputs and skip generic files. For
   these providers, generic files reach the agent only as file paths in the turn text.
 - OpenCode sends PNG/JPEG/GIF/WebP images, text files, and PDFs up to 20 MB as native file parts
   with their real mime type. Everything else (ZIP and other binaries, image formats model APIs
@@ -116,7 +117,7 @@ attachment to the provider adapter. Each adapter decides what its provider inges
 Claude receives the attachment directory as an allowed additional directory. Codex keeps its
 configured sandbox policy, so access depends on that policy and the selected runtime mode. OpenCode
 allows all paths in full-access mode and requests approval for directories outside the workspace in
-restricted modes. Cursor and Grok use their own provider permission rules.
+restricted modes. Cursor, Grok, and Kiro use their own provider permission rules.
 
 The server does not copy attachments into a project or bypass provider approval rules. If an agent
 cannot read an attachment, the user must approve the access or select a runtime mode that permits it.
@@ -170,6 +171,7 @@ when a request opens (approval) or user input is requested, via
 [claude]: ../../apps/server/src/provider/Drivers/ClaudeDriver.ts
 [cursor]: ../../apps/server/src/provider/Drivers/CursorDriver.ts
 [grok]: ../../apps/server/src/provider/Drivers/GrokDriver.ts
+[kiro]: ../../apps/server/src/provider/Drivers/KiroDriver.ts
 [pi]: ../../apps/server/src/provider/Drivers/PiDriver.ts
 [opencode]: ../../apps/server/src/provider/Drivers/OpenCodeDriver.ts
 [opencode-server-owner]: ../../apps/server/src/provider/OpenCodeServerOwner.ts

@@ -70,9 +70,10 @@ to use, then authenticate it.
 | Claude     | [Claude Code](https://claude.com/product/claude-code) | `claude`       | `claude auth login`   |
 | Cursor     | [Cursor CLI](https://cursor.com/cli)                  | `cursor-agent` | `agent login`         |
 | Grok Build | [Grok Build CLI](https://x.ai/cli)                    | `grok`         | `grok login`          |
+| Kiro       | [Kiro CLI](https://kiro.dev/docs/cli/installation/)   | `kiro-cli`     | `kiro-cli login`      |
 | OpenCode   | [OpenCode](https://opencode.ai)                       | `opencode`     | `opencode auth login` |
 
-Codex and Claude are on by default. Cursor, Grok Build, and OpenCode are off by default; turn
+Codex and Claude are on by default. Cursor, Grok Build, Kiro, and OpenCode are off by default; turn
 them on in **Settings** → the provider's card when you want to use them.
 
 Cursor is the one to watch: install Cursor CLI, which provides the `cursor-agent` binary that
@@ -81,6 +82,9 @@ T3 Code looks for, but authenticate with `agent login`, not `cursor-agent login`
 Grok models that support adjustable reasoning show a **Reasoning** control beside the model picker.
 The available levels and default come from the installed Grok Build CLI, so they can vary by model
 and CLI version.
+
+Kiro exposes its available models and Default and Planner workflows through ACP. T3 Code refreshes
+those choices from the installed CLI, so the model list can change when Kiro updates.
 
 Run the login command on the machine running the T3 Code server, not on the device you browse
 from.

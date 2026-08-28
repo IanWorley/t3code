@@ -46,6 +46,8 @@ translates the mode into its approval policy and sandbox level, so **Supervised*
 with prompting enabled and a restricted workspace while **Full access** disables both. Grok
 threads do the same: **Supervised** starts Grok in ask mode even if your Grok CLI config is
 set to always-approve, and **Full access** starts Grok with always-approve. The labels above
-describe what you get; the exact per-provider translation is internal and may change.
+describe what you get; the exact per-provider translation is internal and may change. Kiro maps
+**Full access** to its trust-all-tools mode. Its other runtime modes retain Kiro's normal approval
+prompts; selecting Plan in the composer switches the ACP session to Kiro's Planner workflow.
 
 Mobile offers the same four modes with the same labels and descriptions.
