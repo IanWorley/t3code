@@ -1741,6 +1741,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
               const cursorProvider = providers.find(
                 (provider) => provider.instanceId === ProviderInstanceId.make("cursor"),
               );
+              const piProvider = providers.find(
+                (provider) => provider.instanceId === ProviderInstanceId.make("pi"),
+              );
 
               assert.deepStrictEqual(providers.map((provider) => provider.instanceId).toSorted(), [
                 "claudeAgent",
@@ -1748,6 +1751,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                 "cursor",
                 "grok",
                 "opencode",
+                "pi",
               ]);
               assert.strictEqual(cursorProvider?.enabled, false);
               assert.strictEqual(cursorProvider?.status, "disabled");
@@ -1756,6 +1760,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                 "Cursor is disabled in T3 Code settings.",
               );
               assert.strictEqual(cursorSpawned, false);
+              assert.strictEqual(piProvider?.enabled, false);
+              assert.strictEqual(piProvider?.status, "disabled");
+              assert.strictEqual(piProvider?.message, "Pi is disabled in T3 Code settings.");
             }).pipe(Effect.provide(runtimeServices));
           }),
       );

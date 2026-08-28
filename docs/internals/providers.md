@@ -7,7 +7,7 @@ orchestration layer does not know which one is behind a thread.
 
 ## Built-in drivers
 
-[`builtInDrivers.ts`][drivers] exports `BUILT_IN_DRIVERS` with five entries:
+[`builtInDrivers.ts`][drivers] exports `BUILT_IN_DRIVERS` with six entries:
 
 | Driver kind   | Driver source                           |
 | ------------- | --------------------------------------- |
@@ -15,6 +15,7 @@ orchestration layer does not know which one is behind a thread.
 | `claudeAgent` | [`Drivers/ClaudeDriver.ts`][claude]     |
 | `cursor`      | [`Drivers/CursorDriver.ts`][cursor]     |
 | `grok`        | [`Drivers/GrokDriver.ts`][grok]         |
+| `pi`          | [`Drivers/PiDriver.ts`][pi]             |
 | `opencode`    | [`Drivers/OpenCodeDriver.ts`][opencode] |
 
 Each driver declares its `driverKind`, a `configSchema`, and a `create` function that builds an
@@ -22,6 +23,11 @@ adapter in a child scope. Adapter implementations live beside them in
 `apps/server/src/provider/Layers/` (`CodexAdapter.ts`, `ClaudeAdapter.ts`, and so on) and conform to
 [`ProviderAdapter.ts`][adapter]. Read the driver plus its adapter to see how a specific agent's
 transport, config, and event shapes are mapped.
+
+Cursor and Pi share the protocol-neutral ACP adapter core in `CursorAdapter.ts`, while their thin
+wrappers select different commands, model configuration, extensions, and MCP behavior. Pi's ACP
+modes represent reasoning levels rather than plan/code modes, so the Pi wrapper maps
+`thought_level` into T3 Code's reasoning option and hides the interaction-mode toggle.
 
 ## Registry and routing
 
@@ -57,7 +63,7 @@ The server stores uploaded attachments in its attachment directory, outside the 
 `ProviderService` adds the absolute path of each attachment to the turn text, then passes every
 attachment to the provider adapter. Each adapter decides what its provider ingests natively:
 
-- Codex, Claude, Cursor, and Grok send images as native image inputs and skip generic files. For
+- Codex, Claude, Cursor, Grok, and Pi send images as native image inputs and skip generic files. For
   these providers, generic files reach the agent only as file paths in the turn text.
 - OpenCode sends PNG/JPEG/GIF/WebP images, text files, and PDFs up to 20 MB as native file parts
   with their real mime type. Everything else (ZIP and other binaries, image formats model APIs
@@ -120,6 +126,7 @@ when a request opens (approval) or user input is requested, via
 [claude]: ../../apps/server/src/provider/Drivers/ClaudeDriver.ts
 [cursor]: ../../apps/server/src/provider/Drivers/CursorDriver.ts
 [grok]: ../../apps/server/src/provider/Drivers/GrokDriver.ts
+[pi]: ../../apps/server/src/provider/Drivers/PiDriver.ts
 [opencode]: ../../apps/server/src/provider/Drivers/OpenCodeDriver.ts
 [adapter]: ../../apps/server/src/provider/Services/ProviderAdapter.ts
 [instances]: ../../apps/server/src/provider/Services/ProviderInstanceRegistry.ts
