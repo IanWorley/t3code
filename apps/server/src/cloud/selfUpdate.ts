@@ -15,6 +15,7 @@ import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 
 import * as ServerConfig from "../config.ts";
+import { NPM_PACKAGE_NAME } from "../npmPackage.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import {
   ensurePinnedRuntimeInstalled,
@@ -164,7 +165,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
         Effect.mapError((error) =>
           error._tag === "PinnedRuntimePreflightBlockedError"
             ? failWith(error.reason, error)
-            : failWith(`Could not prepare t3@${targetVersion}.`, error),
+            : failWith(`Could not prepare ${NPM_PACKAGE_NAME}@${targetVersion}.`, error),
         ),
       );
 

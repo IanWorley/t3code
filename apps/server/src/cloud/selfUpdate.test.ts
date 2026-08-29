@@ -9,6 +9,7 @@ import * as Path from "effect/Path";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import * as ServerConfig from "../config.ts";
+import { NPM_PACKAGE_NAME } from "../npmPackage.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ServiceLauncherClient from "./serviceLauncherClient.ts";
 import { SERVICE_LAUNCHER_PROTOCOL } from "./serviceProtocol.ts";
@@ -35,7 +36,7 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
           order.push("install");
           const prefix = input.args[input.args.indexOf("--prefix") + 1];
           if (prefix === undefined) return yield* Effect.die("missing npm prefix");
-          const entry = path.join(prefix, "node_modules", "t3", "dist", "bin.mjs");
+          const entry = path.join(prefix, "node_modules", NPM_PACKAGE_NAME, "dist", "bin.mjs");
           yield* fs.makeDirectory(path.dirname(entry), { recursive: true }).pipe(Effect.orDie);
           yield* fs.writeFileString(entry, "export {};\n").pipe(Effect.orDie);
           return {

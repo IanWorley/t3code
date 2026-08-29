@@ -20,6 +20,7 @@ import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
 import { fromYaml } from "@t3tools/shared/schemaYaml";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import serverPackageJson from "../package.json" with { type: "json" };
+import { NPM_PACKAGE_NAME } from "../src/npmPackage.ts";
 import {
   ServerCliBuildAssetMissingError,
   ServerCliCommandExitError,
@@ -190,7 +191,7 @@ const createVpPmPublishArgs = (config: PublishCommandConfig): ReadonlyArray<stri
   const args = [
     "publish",
     "--filter",
-    "t3",
+    NPM_PACKAGE_NAME,
     "--access",
     config.access,
     "--tag",
@@ -242,7 +243,7 @@ const publishCmd = Command.make(
           const workspaceCatalog = workspaceConfig.catalog ?? {};
           const workspaceOverrides = workspaceConfig.overrides ?? {};
           const pkg: PackageJson = {
-            name: serverPackageJson.name,
+            name: NPM_PACKAGE_NAME,
             repository: serverPackageJson.repository,
             bin: serverPackageJson.bin,
             type: serverPackageJson.type,

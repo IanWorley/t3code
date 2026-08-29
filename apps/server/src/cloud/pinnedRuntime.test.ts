@@ -8,6 +8,7 @@ import * as Path from "effect/Path";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import * as ProcessRunner from "../processRunner.ts";
+import { NPM_PACKAGE_NAME } from "../npmPackage.ts";
 import {
   ensurePinnedRuntimeInstalled,
   pinnedRuntimePaths,
@@ -21,7 +22,7 @@ const successfulRunner = (fs: FileSystem.FileSystem, path: Path.Path) =>
         const prefixIndex = input.args.indexOf("--prefix");
         const stagingDir = input.args[prefixIndex + 1];
         if (stagingDir === undefined) return yield* Effect.die("missing npm --prefix");
-        const entry = path.join(stagingDir, "node_modules", "t3", "dist", "bin.mjs");
+        const entry = path.join(stagingDir, "node_modules", NPM_PACKAGE_NAME, "dist", "bin.mjs");
         yield* fs.makeDirectory(path.dirname(entry), { recursive: true }).pipe(Effect.orDie);
         yield* fs.writeFileString(entry, "export {};\n").pipe(Effect.orDie);
         return {
