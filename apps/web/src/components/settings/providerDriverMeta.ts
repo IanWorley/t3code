@@ -4,7 +4,9 @@ import {
   CodexSettings,
   CursorSettings,
   GrokSettings,
+  KiroSettings,
   OpenCodeSettings,
+  PiSettings,
   ProviderDriverKind,
 } from "@t3tools/contracts";
 import type * as Schema from "effect/Schema";
@@ -13,9 +15,11 @@ import {
   ClaudeAI,
   CursorIcon,
   GrokIcon,
+  KiroIcon,
   type Icon,
   OpenAI,
   OpenCodeIcon,
+  PiAgentIcon,
 } from "../Icons";
 
 type ProviderSettingsSchema = {
@@ -69,6 +73,20 @@ const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = [
     icon: GrokIcon,
     badgeLabel: "Early Access",
     settingsSchema: GrokSettings,
+  },
+  {
+    value: ProviderDriverKind.make("kiro"),
+    label: "Kiro",
+    icon: KiroIcon,
+    badgeLabel: "Early Access",
+    settingsSchema: KiroSettings,
+  },
+  {
+    value: ProviderDriverKind.make("pi"),
+    label: "Pi",
+    icon: PiAgentIcon,
+    badgeLabel: "Early Access",
+    settingsSchema: PiSettings,
   },
   {
     value: ProviderDriverKind.make("opencode"),

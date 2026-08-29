@@ -33,6 +33,7 @@ const emitActiveToolThenHang = process.env.T3_ACP_EMIT_ACTIVE_TOOL_THEN_HANG ===
 const emitGrokMonitorPostTurnPoll = process.env.T3_ACP_EMIT_GROK_MONITOR_POST_TURN_POLL === "1";
 const emitGrokBackgroundTaskStarted = process.env.T3_ACP_EMIT_GROK_BACKGROUND_TASK_STARTED === "1";
 const emitForeignSessionUpdates = process.env.T3_ACP_EMIT_FOREIGN_SESSION_UPDATES === "1";
+const emitAvailableCommands = process.env.T3_ACP_EMIT_AVAILABLE_COMMANDS === "1";
 const waitForResumeRelease = process.env.T3_ACP_WAIT_FOR_RESUME_RELEASE === "1";
 const completeFirstPromptOnCancel = process.env.T3_ACP_COMPLETE_FIRST_PROMPT_ON_CANCEL === "1";
 const floodStderr = process.env.T3_ACP_FLOOD_STDERR === "1";
@@ -435,6 +436,18 @@ const program = Effect.gen(function* () {
 
   yield* agent.handleCreateSession(() =>
     Effect.gen(function* () {
+      if (emitAvailableCommands) {
+        yield* agent.client.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "available_commands_update",
+            availableCommands: [
+              { name: "goal", description: "Manage the active goal" },
+              { name: "skill:ketch", description: "Use the Ketch skill" },
+            ],
+          },
+        });
+      }
       if (antigravityProfile) {
         yield* publishAntigravityCommands(sessionId);
       }

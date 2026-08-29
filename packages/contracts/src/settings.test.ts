@@ -6,6 +6,7 @@ import {
   ClientSettingsSchema,
   ClientSettingsPatch,
   ClaudeSettings,
+  DEFAULT_VIBEPROXY_URL,
   DEFAULT_SERVER_SETTINGS,
   resolveProviderInstanceEnabled,
   ServerSettings,
@@ -47,6 +48,50 @@ describe("ServerSettings default permissions", () => {
       }),
     ).toThrow();
   });
+});
+
+});
+
+describe("VibeProxy settings", () => {
+  it("defaults to the local VibeProxy endpoint", () => {
+    expect(decodeServerSettings({}).vibeProxy).toEqual({
+      url: DEFAULT_VIBEPROXY_URL,
+      apiKey: { value: "" },
+    });
+  });
+
+  it("decodes global URL and redacted API key patches", () => {
+    expect(
+      decodeServerSettingsPatch({
+        vibeProxy: {
+          url: "https://proxy.example.test",
+          apiKey: { value: "", valueRedacted: true },
+        },
+      }).vibeProxy,
+    ).toEqual({
+      url: "https://proxy.example.test",
+      apiKey: { value: "", valueRedacted: true },
+    });
+  });
+});
+
+describe("fork provider custom models", () => {
+  it.each(["pi", "kiro"] as const)(
+    "accepts model definitions for %s settings and patches",
+    (driver) => {
+      const customModels = [
+        { slug: "custom-model", name: "Custom Model", capabilities: { optionDescriptors: [] } },
+      ];
+      expect(
+        decodeServerSettings({ providers: { [driver]: { customModels } } }).providers[driver]
+          .customModels,
+      ).toEqual(customModels);
+      expect(
+        decodeServerSettingsPatch({ providers: { [driver]: { customModels } } }).providers?.[driver]
+          ?.customModels,
+      ).toEqual(customModels);
+    },
+  );
 });
 
 describe("ServerSettings usage price overrides", () => {
@@ -662,7 +707,31 @@ describe("provider enabled defaults", () => {
     expect(decoded.providers.claudeAgent.enabled).toBe(true);
     expect(decoded.providers.cursor.enabled).toBe(false);
     expect(decoded.providers.grok.enabled).toBe(false);
+    expect(decoded.providers.kiro.enabled).toBe(false);
+    expect(decoded.providers.pi.enabled).toBe(false);
     expect(decoded.providers.opencode.enabled).toBe(false);
+  });
+
+  it("derives per-driver defaults from the settings schemas", () => {
+    expect(
+      resolveProviderInstanceEnabled({ driver: ProviderDriverKind.make("codex"), config: {} }),
+    ).toBe(true);
+    expect(
+      resolveProviderInstanceEnabled({ driver: ProviderDriverKind.make("cursor"), config: {} }),
+    ).toBe(false);
+    expect(
+      resolveProviderInstanceEnabled({ driver: ProviderDriverKind.make("grok"), config: {} }),
+    ).toBe(false);
+    expect(
+      resolveProviderInstanceEnabled({ driver: ProviderDriverKind.make("kiro"), config: {} }),
+    ).toBe(false);
+    expect(
+      resolveProviderInstanceEnabled({ driver: ProviderDriverKind.make("pi"), config: {} }),
+    ).toBe(false);
+    // Unknown fork drivers stay enabled; their own build decides otherwise.
+    expect(
+      resolveProviderInstanceEnabled({ driver: ProviderDriverKind.make("ollama"), config: {} }),
+    ).toBe(true);
   });
 
   it("keeps Cursor enabled when an existing user explicitly opted in", () => {

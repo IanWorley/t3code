@@ -263,6 +263,7 @@ const PersistedOptionalProviderSettings = Schema.Struct({
     Schema.Struct({
       cursor: Schema.optionalKey(Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) })),
       grok: Schema.optionalKey(Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) })),
+      pi: Schema.optionalKey(Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) })),
       opencode: Schema.optionalKey(Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) })),
     }),
   ),
@@ -291,6 +292,7 @@ function restoreUsedProviders(
       instance.enabled === undefined &&
       (instance.driver === "cursor" ||
         instance.driver === "grok" ||
+        instance.driver === "pi" ||
         instance.driver === "opencode") &&
       usedProviderInstances.has(instanceId)
         ? { ...instance, enabled: true }
@@ -309,6 +311,10 @@ function restoreUsedProviders(
       grok: {
         ...settings.providers.grok,
         enabled: persisted.providers?.grok?.enabled ?? usedProviders.has("grok"),
+      },
+      pi: {
+        ...settings.providers.pi,
+        enabled: persisted.providers?.pi?.enabled ?? usedProviders.has("pi"),
       },
       opencode: {
         ...settings.providers.opencode,
@@ -592,13 +598,13 @@ const make = Effect.gen(function* () {
         provider_name AS "providerName",
         provider_instance_id AS "providerInstanceId"
       FROM projection_thread_sessions
-      WHERE provider_name IN ('cursor', 'grok', 'opencode')
+      WHERE provider_name IN ('cursor', 'grok', 'pi', 'opencode')
       UNION
       SELECT DISTINCT
         provider_name AS "providerName",
         provider_instance_id AS "providerInstanceId"
       FROM provider_session_runtime
-      WHERE provider_name IN ('cursor', 'grok', 'opencode')
+      WHERE provider_name IN ('cursor', 'grok', 'pi', 'opencode')
     `.pipe(
       Effect.mapError(
         (cause) =>

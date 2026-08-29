@@ -5,8 +5,10 @@ import {
   CursorIcon,
   GrokIcon,
   Icon,
+  KiroIcon,
   OpenAI,
   OpenCodeIcon,
+  PiAgentIcon,
 } from "../Icons";
 
 export const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
@@ -15,6 +17,8 @@ export const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>
   [ProviderDriverKind.make("opencode")]: OpenCodeIcon,
   [ProviderDriverKind.make("cursor")]: CursorIcon,
   [ProviderDriverKind.make("grok")]: GrokIcon,
+  [ProviderDriverKind.make("kiro")]: KiroIcon,
+  [ProviderDriverKind.make("pi")]: PiAgentIcon,
   [ProviderDriverKind.make("antigravity")]: AntigravityIcon,
 };
 

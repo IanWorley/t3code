@@ -811,6 +811,58 @@ export const AntigravitySettings = makeProviderSettingsSchema(
 );
 export type AntigravitySettings = typeof AntigravitySettings.Type;
 
+export const PiSettings = makeProviderSettingsSchema(
+  {
+    // Pi depends on a separately installed ACP adapter, so users opt in
+    // after configuring both pi and pi-acp on the server host.
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("pi-acp").pipe(
+      Schema.annotateKey({
+        title: "Binary path",
+        description: "Path to the Pi ACP adapter binary.",
+        providerSettingsForm: { placeholder: "pi-acp", clearWhenEmpty: "omit" },
+      }),
+    ),
+    customModels: Schema.Array(CustomModelSetting).pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+  },
+  {
+    order: ["binaryPath"],
+  },
+);
+export type PiSettings = typeof PiSettings.Type;
+
+export const KiroSettings = makeProviderSettingsSchema(
+  {
+    // Kiro is opt-in so existing installations do not start a new CLI probe
+    // until the user chooses to enable it.
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("kiro-cli").pipe(
+      Schema.annotateKey({
+        title: "Binary path",
+        description: "Path to the Kiro CLI binary.",
+        providerSettingsForm: { placeholder: "kiro-cli", clearWhenEmpty: "omit" },
+      }),
+    ),
+    customModels: Schema.Array(CustomModelSetting).pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+  },
+  {
+    order: ["binaryPath"],
+  },
+);
+export type KiroSettings = typeof KiroSettings.Type;
+
 export const OpenCodeSettings = makeProviderSettingsSchema(
   {
     // Off by default (like Cursor and Grok): the binding is not yet stable
@@ -1004,6 +1056,20 @@ export const ProjectSettingsOverrides = Schema.Struct({
 } satisfies Record<ProjectScopedServerSettingKey, unknown>);
 export type ProjectSettingsOverrides = typeof ProjectSettingsOverrides.Type;
 
+export const DEFAULT_VIBEPROXY_URL = "http://localhost:8317";
+
+export const VibeProxyApiKeySetting = Schema.Struct({
+  value: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  valueRedacted: Schema.optionalKey(Schema.Boolean),
+}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type VibeProxyApiKeySetting = typeof VibeProxyApiKeySetting.Type;
+
+export const VibeProxySettings = Schema.Struct({
+  url: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_VIBEPROXY_URL))),
+  apiKey: VibeProxyApiKeySetting,
+}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type VibeProxySettings = typeof VibeProxySettings.Type;
+
 export const ServerSettings = Schema.Struct({
   // How assistant text reaches clients during a turn. Deliberately a fresh
   // key (was `enableLegacyTokenStreaming`, before that
@@ -1128,6 +1194,7 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
   addProjectBaseDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  vibeProxy: VibeProxySettings,
   textGenerationModelSelection: ModelSelection.pipe(
     Schema.withDecodingDefault(
       Effect.succeed({
@@ -1168,6 +1235,8 @@ export const ServerSettings = Schema.Struct({
     claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     cursor: CursorSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     grok: GrokSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    kiro: KiroSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    pi: PiSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     opencode: OpenCodeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     antigravity: AntigravitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
@@ -1335,6 +1404,18 @@ const AntigravitySettingsPatch = Schema.Struct({
   customModels: Schema.optionalKey(Schema.Array(CustomModelSetting)),
 });
 
+const KiroSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(TrimmedString),
+  customModels: Schema.optionalKey(Schema.Array(CustomModelSetting)),
+});
+
+const PiSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(TrimmedString),
+  customModels: Schema.optionalKey(Schema.Array(CustomModelSetting)),
+});
+
 const OpenCodeSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(TrimmedString),
@@ -1393,6 +1474,17 @@ export const ServerSettingsPatch = Schema.Struct({
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
+  vibeProxy: Schema.optionalKey(
+    Schema.Struct({
+      url: Schema.optionalKey(TrimmedString),
+      apiKey: Schema.optionalKey(
+        Schema.Struct({
+          value: Schema.optionalKey(Schema.String),
+          valueRedacted: Schema.optionalKey(Schema.Boolean),
+        }),
+      ),
+    }),
+  ),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   sourceControlWritingStyle: Schema.optionalKey(
     Schema.Struct({
@@ -1415,6 +1507,8 @@ export const ServerSettingsPatch = Schema.Struct({
       claudeAgent: Schema.optionalKey(ClaudeSettingsPatch),
       cursor: Schema.optionalKey(CursorSettingsPatch),
       grok: Schema.optionalKey(GrokSettingsPatch),
+      kiro: Schema.optionalKey(KiroSettingsPatch),
+      pi: Schema.optionalKey(PiSettingsPatch),
       opencode: Schema.optionalKey(OpenCodeSettingsPatch),
       antigravity: Schema.optionalKey(AntigravitySettingsPatch),
     }),

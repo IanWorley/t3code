@@ -107,3 +107,31 @@ current client support.
 
 Model classification has its own [manifest constraints](./model-manifest.md). Assistant-reference
 handling is documented under [citations](./assistant-citations.md).
+
+## VibeProxy routing
+
+Codex and Claude instances can opt into VibeProxy through the provider-instance envelope. The proxy
+URL and client API key are environment-global settings; the URL defaults to
+`http://localhost:8317`, and the key is stored in the server secret store. The server probes health
+and models during the existing provider refresh lifecycle and publishes redacted status on that
+instance's provider snapshot. Changing either global value rebuilds only Codex and Claude
+instances. Older per-instance client keys remain a runtime fallback so existing configurations
+continue to work.
+
+Routing is applied only to the effective process configuration. Codex receives a T3-owned custom
+model-provider override; Claude receives an Anthropic gateway environment overlay that removes
+competing Bedrock, Vertex, Foundry, and other backend selectors inherited by the server process.
+Neither driver edits harness config files. Enabled routing fails closed when URL validation or
+health fails, so an explicit proxy choice never silently becomes a direct upstream request.
+Proxy-only model IDs are projected as custom models while exact built-in matches retain their
+existing metadata. Each instance can disable that projection independently with
+`vibeProxy.offerModels` while keeping the runtime route active; the live proxy inventory remains in
+the status snapshot for availability advisories. The snapshot also records the exact IDs added by
+the projection so clients badge only proxy-added models, not native harness models whose traffic
+happens to use the proxy route.
+
+## Pi ACP modes
+
+Cursor and Pi share the protocol-neutral ACP adapter core in `CursorAdapter.ts`. Pi ACP modes
+represent reasoning levels rather than plan/code modes; its wrapper maps `thought_level` to the
+reasoning option and hides the interaction-mode toggle.

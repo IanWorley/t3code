@@ -92,7 +92,12 @@ export interface AcpSessionRuntimeOptions {
     readonly name: string;
     readonly version: string;
   };
-  readonly authMethodId: string;
+  /**
+   * ACP agents may authenticate out-of-band and advertise no `authenticate`
+   * method. Leave this unset for those agents so startup proceeds directly
+   * from initialization to session setup.
+   */
+  readonly authMethodId?: string;
   readonly mcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
   /** Extra workspace roots the agent may read and write besides `cwd`. */
   readonly additionalDirectories?: ReadonlyArray<string>;
@@ -231,6 +236,10 @@ export class AcpSessionRuntime extends Context.Service<
     readonly getModeState: Effect.Effect<AcpSessionModeState | undefined>;
     /** Latest configuration options observed from session setup and configuration writes. */
     readonly getConfigOptions: Effect.Effect<ReadonlyArray<EffectAcpSchema.SessionConfigOption>>;
+    /** Latest slash commands advertised through `available_commands_update`. */
+    readonly getAvailableCommands: Effect.Effect<ReadonlyArray<EffectAcpSchema.AvailableCommand>>;
+    /** Waits for the first slash-command inventory advertised by the agent. */
+    readonly awaitAvailableCommands: Effect.Effect<ReadonlyArray<EffectAcpSchema.AvailableCommand>>;
     /**
      * Sends a prompt turn to the active session. `options.dispatched` settles once the
      * `session/prompt` RPC is registered as the active prompt, so a caller that forks this
@@ -344,6 +353,11 @@ export const make = (
     );
     const assistantSegmentRef = yield* Ref.make<AcpAssistantSegmentState>({ nextSegmentIndex: 0 });
     const configOptionsRef = yield* Ref.make(sessionConfigOptionsFromSetup(undefined));
+    const availableCommandsRef = yield* Ref.make<ReadonlyArray<EffectAcpSchema.AvailableCommand>>(
+      [],
+    );
+    const availableCommandsReady =
+      yield* Deferred.make<ReadonlyArray<EffectAcpSchema.AvailableCommand>>();
     const startStateRef = yield* Ref.make<AcpStartState>({ _tag: "NotStarted" });
     const startupMetadataRef = yield* Ref.make<ReadonlyArray<EffectAcpSchema.SessionNotification>>(
       [],
@@ -490,6 +504,8 @@ export const make = (
 
     const processSessionUpdate = (notification: EffectAcpSchema.SessionNotification) =>
       handleSessionUpdate({
+        availableCommandsRef,
+        availableCommandsReady,
         queue: eventQueue,
         modeStateRef,
         configOptionsRef,
@@ -699,15 +715,17 @@ export const make = (
     const startOnce = Effect.gen(function* () {
       const initializeResult = yield* sendInitialize;
 
-      const authenticatePayload = {
-        methodId: options.authMethodId,
-      } satisfies EffectAcpSchema.AuthenticateRequest;
+      if (options.authMethodId !== undefined) {
+        const authenticatePayload = {
+          methodId: options.authMethodId,
+        } satisfies EffectAcpSchema.AuthenticateRequest;
 
-      yield* runLoggedRequest(
-        "authenticate",
-        authenticatePayload,
-        acp.agent.authenticate(authenticatePayload),
-      );
+        yield* runLoggedRequest(
+          "authenticate",
+          authenticatePayload,
+          acp.agent.authenticate(authenticatePayload),
+        );
+      }
 
       let sessionId: string;
       let sessionSetupResult:
@@ -977,6 +995,8 @@ export const make = (
       drainEvents,
       getModeState: Ref.get(modeStateRef),
       getConfigOptions: Ref.get(configOptionsRef),
+      getAvailableCommands: Ref.get(availableCommandsRef),
+      awaitAvailableCommands: Deferred.await(availableCommandsReady),
       prompt: (payload, promptOptions?) =>
         promptSerializationSemaphore.withPermit(
           Effect.acquireUseRelease(
@@ -1128,6 +1148,8 @@ function isStartupMetadataUpdate(notification: EffectAcpSchema.SessionNotificati
 const handleSessionUpdate = ({
   queue,
   modeStateRef,
+  availableCommandsRef,
+  availableCommandsReady,
   configOptionsRef,
   toolCallsRef,
   assistantSegmentRef,
@@ -1136,6 +1158,10 @@ const handleSessionUpdate = ({
 }: {
   readonly queue: Queue.Queue<AcpSessionRuntimeEvent>;
   readonly modeStateRef: Ref.Ref<AcpSessionModeState | undefined>;
+  readonly availableCommandsRef: Ref.Ref<ReadonlyArray<EffectAcpSchema.AvailableCommand>>;
+  readonly availableCommandsReady: Deferred.Deferred<
+    ReadonlyArray<EffectAcpSchema.AvailableCommand>
+  >;
   readonly configOptionsRef: Ref.Ref<ReadonlyArray<EffectAcpSchema.SessionConfigOption>>;
   readonly toolCallsRef: Ref.Ref<Map<string, AcpToolCallTrackedState>>;
   readonly assistantSegmentRef: Ref.Ref<AcpAssistantSegmentState>;
@@ -1143,6 +1169,11 @@ const handleSessionUpdate = ({
   readonly params: EffectAcpSchema.SessionNotification;
 }): Effect.Effect<void> =>
   Effect.gen(function* () {
+    if (params.update.sessionUpdate === "available_commands_update") {
+      const commands = params.update.availableCommands;
+      yield* Ref.set(availableCommandsRef, commands);
+      yield* Deferred.succeed(availableCommandsReady, commands);
+    }
     if (params.update.sessionUpdate === "config_option_update") {
       yield* Ref.set(configOptionsRef, params.update.configOptions);
     }
