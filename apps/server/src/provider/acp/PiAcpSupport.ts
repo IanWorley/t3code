@@ -10,6 +10,7 @@ import type * as EffectAcpErrors from "effect-acp/errors";
 import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 
 const PI_ACP_AUTH_METHOD_ID = "pi_terminal_login";
+export const PI_ACP_NO_TOOLS_ENV = "PI_ACP_NO_TOOLS";
 export const PI_THOUGHT_LEVEL_CONFIG_ID = "thought_level";
 export const PI_REASONING_OPTION_ID = "reasoningEffort";
 const PI_DELETE_SESSION_METHOD = "session/delete";

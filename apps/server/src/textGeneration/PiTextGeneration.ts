@@ -5,8 +5,13 @@ import {
   applyPiAcpModelSelection,
   deletePiAcpSession,
   makePiAcpRuntime,
+  PI_ACP_NO_TOOLS_ENV,
 } from "../provider/acp/PiAcpSupport.ts";
 import { makeCoreAcpTextGeneration } from "./CursorTextGeneration.ts";
+
+export function disablePiToolsForTextGeneration(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { ...environment, [PI_ACP_NO_TOOLS_ENV]: "1" };
+}
 
 export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* (
   settings: PiSettings,
@@ -32,6 +37,6 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
             }),
         }),
     },
-    environment,
+    disablePiToolsForTextGeneration(environment ?? process.env),
   );
 });
