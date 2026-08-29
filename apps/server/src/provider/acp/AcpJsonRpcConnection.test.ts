@@ -116,6 +116,37 @@ describe("AcpSessionRuntime", () => {
     ),
   );
 
+  it.effect("tracks slash commands advertised during session startup", () =>
+    Effect.gen(function* () {
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
+      yield* runtime.start();
+
+      expect(yield* runtime.awaitAvailableCommands).toEqual([
+        { name: "goal", description: "Manage the active goal" },
+        { name: "skill:ketch", description: "Use the Ketch skill" },
+      ]);
+      expect(yield* runtime.getAvailableCommands).toEqual([
+        { name: "goal", description: "Manage the active goal" },
+        { name: "skill:ketch", description: "Use the Ketch skill" },
+      ]);
+    }).pipe(
+      Effect.provide(
+        AcpSessionRuntime.layer({
+          spawn: {
+            command: mockAgentCommand,
+            args: mockAgentArgs,
+            env: { T3_ACP_EMIT_AVAILABLE_COMMANDS: "1" },
+          },
+          cwd: process.cwd(),
+          clientInfo: { name: "t3-test", version: "0.0.0" },
+          authMethodId: "test",
+        }),
+      ),
+      Effect.scoped,
+      Effect.provide(NodeServices.layer),
+    ),
+  );
+
   it.effect("keeps assistant item IDs unique when a provider session restarts", () => {
     const collectFirstAssistantItemId = Effect.gen(function* () {
       const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;

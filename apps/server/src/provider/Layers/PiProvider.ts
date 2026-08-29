@@ -2,6 +2,7 @@ import {
   type ModelCapabilities,
   type PiSettings,
   type ServerProviderModel,
+  type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { causeErrorTag } from "@t3tools/shared/observability";
@@ -34,6 +35,7 @@ const PI_PRESENTATION = {
   showInteractionModeToggle: false,
 } as const;
 const PI_ACP_MODEL_DISCOVERY_TIMEOUT_MS = 15_000;
+const PI_ACP_COMMAND_DISCOVERY_TIMEOUT_MS = 2_000;
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({ optionDescriptors: [] });
 const DEFAULT_PI_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
@@ -125,6 +127,28 @@ export function buildPiModelsFromConfigOptions(
   });
 }
 
+export function buildPiSlashCommands(
+  commands: ReadonlyArray<EffectAcpSchema.AvailableCommand>,
+): ReadonlyArray<ServerProviderSlashCommand> {
+  const seen = new Set<string>();
+  return commands.flatMap((command) => {
+    const name = command.name.trim();
+    const normalizedName = name.toLowerCase();
+    if (!name || seen.has(normalizedName)) return [];
+    seen.add(normalizedName);
+
+    const description = command.description.trim();
+    const inputHint = command.input?.hint.trim();
+    return [
+      {
+        name,
+        ...(description ? { description } : {}),
+        ...(inputHint ? { input: { hint: inputHint } } : {}),
+      },
+    ];
+  });
+}
+
 export function buildInitialPiProviderSnapshot(
   settings: PiSettings,
 ): Effect.Effect<ServerProviderDraft> {
@@ -196,9 +220,14 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
     });
     const started = yield* runtime.start();
     yield* Effect.addFinalizer(() => deletePiAcpSession(runtime, started.sessionId));
+    const availableCommands = yield* runtime.awaitAvailableCommands.pipe(
+      Effect.timeoutOption(PI_ACP_COMMAND_DISCOVERY_TIMEOUT_MS),
+      Effect.map(Option.getOrElse(() => [])),
+    );
     return {
       version: started.initializeResult.agentInfo?.version?.trim() || null,
       models: buildPiModelsFromConfigOptions(started.sessionSetupResult.configOptions ?? []),
+      slashCommands: buildPiSlashCommands(availableCommands),
     };
   }).pipe(Effect.scoped, Effect.timeoutOption(PI_ACP_MODEL_DISCOVERY_TIMEOUT_MS), Effect.exit);
 
@@ -212,6 +241,7 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
         settings.customModels,
         result.models.length > 0 ? result.models : DEFAULT_PI_MODELS,
       ),
+      slashCommands: result.slashCommands,
       probe: {
         installed: true,
         version: result.version,

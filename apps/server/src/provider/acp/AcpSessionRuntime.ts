@@ -195,6 +195,10 @@ export class AcpSessionRuntime extends Context.Service<
     readonly getModeState: Effect.Effect<AcpSessionModeState | undefined>;
     /** Latest configuration options observed from session setup and configuration writes. */
     readonly getConfigOptions: Effect.Effect<ReadonlyArray<EffectAcpSchema.SessionConfigOption>>;
+    /** Latest slash commands advertised through `available_commands_update`. */
+    readonly getAvailableCommands: Effect.Effect<ReadonlyArray<EffectAcpSchema.AvailableCommand>>;
+    /** Waits for the first slash-command inventory advertised by the agent. */
+    readonly awaitAvailableCommands: Effect.Effect<ReadonlyArray<EffectAcpSchema.AvailableCommand>>;
     /**
      * Sends a prompt turn to the active session.
      * @see https://agentclientprotocol.com/protocol/schema#session/prompt
@@ -300,6 +304,11 @@ export const make = (
     );
     const assistantSegmentRef = yield* Ref.make<AcpAssistantSegmentState>({ nextSegmentIndex: 0 });
     const configOptionsRef = yield* Ref.make(sessionConfigOptionsFromSetup(undefined));
+    const availableCommandsRef = yield* Ref.make<ReadonlyArray<EffectAcpSchema.AvailableCommand>>(
+      [],
+    );
+    const availableCommandsReady =
+      yield* Deferred.make<ReadonlyArray<EffectAcpSchema.AvailableCommand>>();
     const startStateRef = yield* Ref.make<AcpStartState>({ _tag: "NotStarted" });
     const promptSerializationSemaphore = yield* Semaphore.make(1);
     const activePromptFiberRef = yield* Ref.make<
@@ -394,6 +403,15 @@ export const make = (
           return;
         }
         const startState = yield* Ref.get(startStateRef);
+        if (
+          startState._tag === "Starting" &&
+          notification.update.sessionUpdate === "available_commands_update"
+        ) {
+          const commands = notification.update.availableCommands;
+          yield* Ref.set(availableCommandsRef, commands);
+          yield* Deferred.succeed(availableCommandsReady, commands);
+          return;
+        }
         // One runtime projects one root ACP session. Child-session updates need
         // explicit lineage routing and must never be flattened into this stream.
         if (
@@ -405,6 +423,8 @@ export const make = (
         yield* handleSessionUpdate({
           queue: eventQueue,
           modeStateRef,
+          availableCommandsRef,
+          availableCommandsReady,
           toolCallsRef,
           assistantSegmentRef,
           assistantItemRuntimeId,
@@ -725,6 +745,8 @@ export const make = (
       }),
       getModeState: Ref.get(modeStateRef),
       getConfigOptions: Ref.get(configOptionsRef),
+      getAvailableCommands: Ref.get(availableCommandsRef),
+      awaitAvailableCommands: Deferred.await(availableCommandsReady),
       prompt: (payload) =>
         promptSerializationSemaphore.withPermit(
           Effect.gen(function* () {
@@ -854,6 +876,8 @@ function configOptionCurrentValueMatches(
 const handleSessionUpdate = ({
   queue,
   modeStateRef,
+  availableCommandsRef,
+  availableCommandsReady,
   toolCallsRef,
   assistantSegmentRef,
   assistantItemRuntimeId,
@@ -861,12 +885,21 @@ const handleSessionUpdate = ({
 }: {
   readonly queue: Queue.Queue<AcpSessionRuntimeEvent>;
   readonly modeStateRef: Ref.Ref<AcpSessionModeState | undefined>;
+  readonly availableCommandsRef: Ref.Ref<ReadonlyArray<EffectAcpSchema.AvailableCommand>>;
+  readonly availableCommandsReady: Deferred.Deferred<
+    ReadonlyArray<EffectAcpSchema.AvailableCommand>
+  >;
   readonly toolCallsRef: Ref.Ref<Map<string, AcpToolCallTrackedState>>;
   readonly assistantSegmentRef: Ref.Ref<AcpAssistantSegmentState>;
   readonly assistantItemRuntimeId: string;
   readonly params: EffectAcpSchema.SessionNotification;
 }): Effect.Effect<void> =>
   Effect.gen(function* () {
+    if (params.update.sessionUpdate === "available_commands_update") {
+      const commands = params.update.availableCommands;
+      yield* Ref.set(availableCommandsRef, commands);
+      yield* Deferred.succeed(availableCommandsReady, commands);
+    }
     const parsed = parseSessionUpdateEvent(params);
     if (parsed.modeId) {
       yield* Ref.update(modeStateRef, (current) =>

@@ -4,7 +4,11 @@ import { PiSettings } from "@t3tools/contracts";
 import { it } from "@effect/vitest";
 import { describe, expect } from "vite-plus/test";
 
-import { buildInitialPiProviderSnapshot, buildPiModelsFromConfigOptions } from "./PiProvider.ts";
+import {
+  buildInitialPiProviderSnapshot,
+  buildPiModelsFromConfigOptions,
+  buildPiSlashCommands,
+} from "./PiProvider.ts";
 
 const decodePiSettings = Schema.decodeSync(PiSettings);
 
@@ -67,4 +71,23 @@ describe("buildInitialPiProviderSnapshot", () => {
       expect(snapshot.displayName).toBe("Pi");
     }),
   );
+});
+
+describe("buildPiSlashCommands", () => {
+  it("maps and deduplicates ACP commands, including Pi extension commands", () => {
+    expect(
+      buildPiSlashCommands([
+        { name: "goal", description: "Manage the active goal" },
+        { name: "skill:ketch", description: "Use the Ketch skill", input: { hint: "task" } },
+        { name: " Goal ", description: "duplicate" },
+      ]),
+    ).toEqual([
+      { name: "goal", description: "Manage the active goal" },
+      {
+        name: "skill:ketch",
+        description: "Use the Ketch skill",
+        input: { hint: "task" },
+      },
+    ]);
+  });
 });
