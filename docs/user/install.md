@@ -64,15 +64,16 @@ application files under `/mnt/c` instead and reinstalls the runtime on the next 
 T3 Code drives provider CLIs; it does not ship them. Install the CLI for each provider you want
 to use, then authenticate it.
 
-| Provider   | CLI                                                   | Default binary | Log in with           |
-| ---------- | ----------------------------------------------------- | -------------- | --------------------- |
-| Codex      | [Codex CLI](https://developers.openai.com/codex/cli)  | `codex`        | `codex login`         |
-| Claude     | [Claude Code](https://claude.com/product/claude-code) | `claude`       | `claude auth login`   |
-| Cursor     | [Cursor CLI](https://cursor.com/cli)                  | `cursor-agent` | `agent login`         |
-| Grok Build | [Grok Build CLI](https://x.ai/cli)                    | `grok`         | `grok login`          |
-| OpenCode   | [OpenCode](https://opencode.ai)                       | `opencode`     | `opencode auth login` |
+| Provider   | CLI                                                             | Default binary | Log in with           |
+| ---------- | --------------------------------------------------------------- | -------------- | --------------------- |
+| Codex      | [Codex CLI](https://developers.openai.com/codex/cli)            | `codex`        | `codex login`         |
+| Claude     | [Claude Code](https://claude.com/product/claude-code)           | `claude`       | `claude auth login`   |
+| Cursor     | [Cursor CLI](https://cursor.com/cli)                            | `cursor-agent` | `agent login`         |
+| Grok Build | [Grok Build CLI](https://x.ai/cli)                              | `grok`         | `grok login`          |
+| Kiro       | [Kiro CLI](https://kiro.dev/docs/getting-started/installation/) | `kiro-cli`     | `kiro-cli login`      |
+| OpenCode   | [OpenCode](https://opencode.ai)                                 | `opencode`     | `opencode auth login` |
 
-Codex and Claude are on by default. Cursor, Grok Build, and OpenCode are off by default; turn
+Codex and Claude are on by default. Cursor, Grok Build, Kiro, and OpenCode are off by default; turn
 them on in **Settings** → the provider's card when you want to use them.
 
 Cursor is the one to watch: install Cursor CLI, which provides the `cursor-agent` binary that
@@ -81,6 +82,25 @@ T3 Code looks for, but authenticate with `agent login`, not `cursor-agent login`
 Grok models that support adjustable reasoning show a **Reasoning** control beside the model picker.
 The available levels and default come from the installed Grok Build CLI, so they can vary by model
 and CLI version.
+
+Kiro exposes its available models and Default and Planner workflows through ACP. T3 Code refreshes
+those choices from the installed CLI, so the model list can change when Kiro updates. Kiro's ACP
+slash commands appear in the chat slash menu after provider discovery. For models that support
+reasoning effort, T3 Code also discovers Kiro's model-specific effort levels and applies the selected
+level to the active ACP session.
+
+Kiro CLI supports Windows 11 natively. Install it from PowerShell, then open a new terminal so the
+updated `PATH` is visible to T3 Code:
+
+```powershell
+irm 'https://cli.kiro.dev/install.ps1' | iex
+kiro-cli --version
+kiro-cli login
+```
+
+T3 Code checks both Windows `PATH`/`PATHEXT` and Kiro's standard
+`C:\Program Files\Kiro-Cli` install directory for `kiro-cli.exe`. If you use a custom installation
+directory, set the full executable path in **Binary path**.
 
 Run the login command on the machine running the T3 Code server, not on the device you browse
 from.

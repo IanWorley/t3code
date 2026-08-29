@@ -329,9 +329,11 @@ describe("resolveKnownWindowsCliDirs", () => {
       resolveKnownWindowsCliDirs({
         APPDATA: "C:\\Users\\testuser\\AppData\\Roaming",
         LOCALAPPDATA: "C:\\Users\\testuser\\AppData\\Local",
+        ProgramFiles: "C:\\Program Files",
         USERPROFILE: "C:\\Users\\testuser",
       }),
     ).toEqual([
+      "C:\\Program Files\\Kiro-Cli",
       "C:\\Users\\testuser\\AppData\\Roaming\\npm",
       "C:\\Users\\testuser\\AppData\\Local\\Programs\\nodejs",
       "C:\\Users\\testuser\\AppData\\Local\\Volta\\bin",
@@ -450,7 +452,7 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
 });
 
 effectIt.layer(NodeServices.layer)("resolveWindowsEnvironment", (it) => {
-  it.effect("returns the baseline no-profile PATH patch when node is already available", () =>
+  it.effect("adds the standard Kiro directory to the baseline Windows PATH", () =>
     Effect.gen(function* () {
       const readEnvironment = vi.fn(
         (_names: ReadonlyArray<string>, options?: { loadProfile?: boolean }) =>
@@ -466,6 +468,7 @@ effectIt.layer(NodeServices.layer)("resolveWindowsEnvironment", (it) => {
             PATH: "C:\\Windows\\System32",
             APPDATA: "C:\\Users\\testuser\\AppData\\Roaming",
             LOCALAPPDATA: "C:\\Users\\testuser\\AppData\\Local",
+            ProgramFiles: "C:\\Program Files",
             USERPROFILE: "C:\\Users\\testuser",
           }),
           readEnvironment,
@@ -473,6 +476,7 @@ effectIt.layer(NodeServices.layer)("resolveWindowsEnvironment", (it) => {
         ),
       ).toEqual({
         PATH: [
+          "C:\\Program Files\\Kiro-Cli",
           "C:\\Users\\testuser\\AppData\\Roaming\\npm",
           "C:\\Users\\testuser\\AppData\\Local\\Programs\\nodejs",
           "C:\\Users\\testuser\\AppData\\Local\\Volta\\bin",

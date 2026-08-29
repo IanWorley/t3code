@@ -1,12 +1,12 @@
 /**
- * CursorAdapterLive — Cursor CLI (`agent acp`) via ACP.
+ * KiroAdapterLive — Kiro CLI (`kiro-cli acp`) via ACP.
  *
- * @module CursorAdapterLive
+ * @module KiroAdapterLive
  */
 
 import {
   ApprovalRequestId,
-  type CursorSettings,
+  type KiroSettings,
   type ProviderOptionSelection,
   EventId,
   type ProviderApprovalDecision,
@@ -48,7 +48,6 @@ import {
   ProviderAdapterRequestError,
   ProviderAdapterSessionNotFoundError,
   ProviderAdapterValidationError,
-  type ProviderAdapterError,
 } from "../Errors.ts";
 import { acpPermissionOutcome, mapAcpToAdapterError } from "../acp/AcpAdapterSupport.ts";
 import type * as AcpSessionRuntime from "../acp/AcpSessionRuntime.ts";
@@ -66,22 +65,18 @@ import {
   parsePermissionRequest,
 } from "../acp/AcpRuntimeModel.ts";
 import { makeAcpNativeLoggerFactory } from "../acp/AcpNativeLogging.ts";
-import { applyCursorAcpModelSelection, makeCursorAcpRuntime } from "../acp/CursorAcpSupport.ts";
+import { KIRO_COMMANDS_EXECUTE_METHOD } from "../acp/KiroAcpCommands.ts";
 import {
-  CursorAskQuestionRequest,
-  CursorCreatePlanRequest,
-  CursorUpdateTodosRequest,
-  extractAskQuestions,
-  extractPlanMarkdown,
-  extractTodosAsPlan,
-} from "../acp/CursorAcpExtension.ts";
-import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
-import { resolveCursorAcpBaseModelId } from "./CursorProvider.ts";
+  applyKiroAcpModelSelection,
+  makeKiroAcpRuntime,
+  resolveKiroAcpBaseModelId,
+} from "../acp/KiroAcpSupport.ts";
+import { type KiroAdapterShape } from "../Services/KiroAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
-const CURSOR_PROVIDER = ProviderDriverKind.make("cursor");
-const ACP_RESUME_VERSION = 1 as const;
+const PROVIDER = ProviderDriverKind.make("kiro");
+const KIRO_RESUME_VERSION = 1 as const;
 const ACP_PLAN_MODE_ALIASES = ["plan", "architect"];
 const ACP_IMPLEMENT_MODE_ALIASES = ["code", "agent", "default", "chat", "implement"];
 const ACP_APPROVAL_MODE_ALIASES = ["ask"];
@@ -91,19 +86,19 @@ function encodeJsonStringForDiagnostics(input: unknown): string | undefined {
   return Exit.isSuccess(result) ? result.value : undefined;
 }
 
-export interface CursorAdapterLiveOptions {
+export interface KiroAdapterLiveOptions {
   readonly environment?: NodeJS.ProcessEnv;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
   /**
    * Selections are honored when `modelSelection.instanceId` matches this value.
-   * Defaults to the legacy built-in instance id (`cursor`).
+   * Defaults to the legacy built-in instance id (`kiro`).
    */
   readonly instanceId?: ProviderInstanceId;
   /**
    * Optional per-session settings resolver. When provided the adapter yields
    * this effect at the start of every session and uses the result instead of
-   * the `cursorSettings` captured at construction.
+   * the `kiroSettings` captured at construction.
    *
    * Production instances bind settings to the instance scope (the hydration
    * layer rebuilds the adapter on config change) and leave this undefined.
@@ -111,51 +106,7 @@ export interface CursorAdapterLiveOptions {
    * swap `binaryPath` to a mock ACP wrapper — pass a resolver that reads
    * the latest snapshot so the closure isn't stale.
    */
-  readonly resolveSettings?: Effect.Effect<CursorSettings>;
-}
-
-export interface CoreAcpAdapterDefinition<Settings> {
-  readonly provider: ProviderDriverKind;
-  readonly displayName: string;
-  readonly defaultInstanceId: ProviderInstanceId;
-  readonly settings: Settings;
-  readonly resolveSettings?: Effect.Effect<Settings>;
-  readonly supportsCursorExtensions: boolean;
-  readonly supportsMcpServers: boolean;
-  readonly configureModes: boolean;
-  readonly makeRuntime: (input: {
-    readonly settings: Settings;
-    readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
-    readonly cwd: string;
-    readonly environment?: NodeJS.ProcessEnv;
-    readonly resumeSessionId?: string;
-    readonly clientInfo: { readonly name: string; readonly version: string };
-    readonly mcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
-    readonly requestLogger?: NonNullable<
-      AcpSessionRuntime.AcpSessionRuntimeOptions["requestLogger"]
-    >;
-    readonly protocolLogging?: NonNullable<
-      AcpSessionRuntime.AcpSessionRuntimeOptions["protocolLogging"]
-    >;
-  }) => Effect.Effect<
-    AcpSessionRuntime.AcpSessionRuntime["Service"],
-    EffectAcpErrors.AcpError,
-    Crypto.Crypto | Scope.Scope
-  >;
-  readonly applyModelSelection: <E>(input: {
-    readonly runtime: AcpSessionRuntime.AcpSessionRuntime["Service"];
-    readonly model: string | null | undefined;
-    readonly selections: ReadonlyArray<ProviderOptionSelection> | null | undefined;
-    readonly mapError: (cause: EffectAcpErrors.AcpError) => E;
-  }) => Effect.Effect<void, E>;
-  readonly resolveModel: (model: string | null | undefined) => string;
-}
-
-export interface CoreAcpAdapterOptions {
-  readonly environment?: NodeJS.ProcessEnv;
-  readonly nativeEventLogPath?: string;
-  readonly nativeEventLogger?: EventNdjsonLogger;
-  readonly instanceId?: ProviderInstanceId;
+  readonly resolveSettings?: Effect.Effect<KiroSettings>;
 }
 
 interface PendingApproval {
@@ -167,8 +118,9 @@ interface PendingUserInput {
   readonly answers: Deferred.Deferred<ProviderUserInputAnswers>;
 }
 
-interface CursorSessionContext {
+interface KiroSessionContext {
   readonly threadId: ThreadId;
+  readonly providerSessionId: string;
   session: ProviderSession;
   readonly scope: Scope.Closeable;
   readonly acp: AcpSessionRuntime.AcpSessionRuntime["Service"];
@@ -215,9 +167,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseAcpResume(raw: unknown): { sessionId: string } | undefined {
+function parseKiroResume(raw: unknown): { sessionId: string } | undefined {
   if (!isRecord(raw)) return undefined;
-  if (raw.schemaVersion !== ACP_RESUME_VERSION) return undefined;
+  if (raw.schemaVersion !== KIRO_RESUME_VERSION) return undefined;
   if (typeof raw.sessionId !== "string" || !raw.sessionId.trim()) return undefined;
   return { sessionId: raw.sessionId.trim() };
 }
@@ -292,6 +244,7 @@ function resolveRequestedModeId(input: {
 
 function applyRequestedSessionConfiguration<E>(input: {
   readonly runtime: AcpSessionRuntime.AcpSessionRuntime["Service"];
+  readonly providerSessionId: string;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode | undefined;
   readonly modelSelection:
@@ -302,27 +255,22 @@ function applyRequestedSessionConfiguration<E>(input: {
     | undefined;
   readonly mapError: (context: {
     readonly cause: import("effect-acp/errors").AcpError;
-    readonly method: "session/set_config_option" | "session/set_mode";
+    readonly method: typeof KIRO_COMMANDS_EXECUTE_METHOD | "session/set_model" | "session/set_mode";
   }) => E;
-  readonly configureModes: boolean;
-  readonly applyModelSelection: CoreAcpAdapterDefinition<unknown>["applyModelSelection"];
 }): Effect.Effect<void, E> {
   return Effect.gen(function* () {
     if (input.modelSelection) {
-      yield* input.applyModelSelection({
+      yield* applyKiroAcpModelSelection({
         runtime: input.runtime,
+        sessionId: input.providerSessionId,
         model: input.modelSelection.model,
         selections: input.modelSelection.options,
-        mapError: (cause) =>
+        mapError: ({ cause, step }) =>
           input.mapError({
             cause,
-            method: "session/set_config_option",
+            method: step === "set-effort" ? KIRO_COMMANDS_EXECUTE_METHOD : "session/set_model",
           }),
       });
-    }
-
-    if (!input.configureModes) {
-      return;
     }
 
     const requestedModeId = resolveRequestedModeId({
@@ -361,13 +309,9 @@ function selectAutoApprovedPermissionOption(
   return undefined;
 }
 
-export function makeCoreAcpAdapter<Settings>(
-  definition: CoreAcpAdapterDefinition<Settings>,
-  options?: CoreAcpAdapterOptions,
-) {
+export function makeKiroAdapter(kiroSettings: KiroSettings, options?: KiroAdapterLiveOptions) {
   return Effect.gen(function* () {
-    const provider = definition.provider;
-    const boundInstanceId = options?.instanceId ?? definition.defaultInstanceId;
+    const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("kiro");
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -384,7 +328,7 @@ export function makeCoreAcpAdapter<Settings>(
       options?.nativeEventLogger === undefined ? nativeEventLogger : undefined;
     const makeAcpNativeLoggers = yield* makeAcpNativeLoggerFactory();
 
-    const sessions = new Map<ThreadId, CursorSessionContext>();
+    const sessions = new Map<ThreadId, KiroSessionContext>();
     const threadLocksRef = yield* SynchronizedRef.make(new Map<string, Semaphore.Semaphore>());
     const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
 
@@ -393,9 +337,9 @@ export function makeCoreAcpAdapter<Settings>(
       Effect.mapError(
         (cause) =>
           new ProviderAdapterRequestError({
-            provider: provider,
+            provider: PROVIDER,
             method: "crypto/randomUUIDv4",
-            detail: `Failed to generate ${definition.displayName} runtime identifier.`,
+            detail: "Failed to generate Kiro runtime identifier.",
             cause,
           }),
       ),
@@ -407,7 +351,7 @@ export function makeCoreAcpAdapter<Settings>(
         Effect.mapError(
           (cause) =>
             new EffectAcpErrors.AcpTransportError({
-              detail: `Failed to process ${definition.displayName} ACP extension event.`,
+              detail: "Failed to process a Kiro ACP callback.",
               cause,
             }),
         ),
@@ -441,7 +385,7 @@ export function makeCoreAcpAdapter<Settings>(
       threadId: ThreadId,
       method: string,
       payload: unknown,
-      _source: "acp.jsonrpc" | "acp.cursor.extension",
+      _source: "acp.jsonrpc",
     ) =>
       Effect.gen(function* () {
         if (!nativeEventLogger) return;
@@ -452,7 +396,7 @@ export function makeCoreAcpAdapter<Settings>(
             event: {
               id: yield* randomUUIDv4,
               kind: "notification",
-              provider: provider,
+              provider: PROVIDER,
               createdAt: observedAt,
               method,
               threadId,
@@ -464,7 +408,7 @@ export function makeCoreAcpAdapter<Settings>(
       });
 
     const emitPlanUpdate = (
-      ctx: CursorSessionContext,
+      ctx: KiroSessionContext,
       payload: {
         readonly explanation?: string | null;
         readonly plan: ReadonlyArray<{
@@ -473,7 +417,7 @@ export function makeCoreAcpAdapter<Settings>(
         }>;
       },
       rawPayload: unknown,
-      source: "acp.jsonrpc" | "acp.cursor.extension",
+      source: "acp.jsonrpc",
       method: string,
     ) =>
       Effect.gen(function* () {
@@ -485,7 +429,7 @@ export function makeCoreAcpAdapter<Settings>(
         yield* offerRuntimeEvent(
           makeAcpPlanUpdatedEvent({
             stamp: yield* makeEventStamp(),
-            provider: provider,
+            provider: PROVIDER,
             threadId: ctx.threadId,
             turnId: ctx.activeTurnId,
             payload,
@@ -498,17 +442,17 @@ export function makeCoreAcpAdapter<Settings>(
 
     const requireSession = (
       threadId: ThreadId,
-    ): Effect.Effect<CursorSessionContext, ProviderAdapterSessionNotFoundError> => {
+    ): Effect.Effect<KiroSessionContext, ProviderAdapterSessionNotFoundError> => {
       const ctx = sessions.get(threadId);
       if (!ctx || ctx.stopped) {
         return Effect.fail(
-          new ProviderAdapterSessionNotFoundError({ provider: provider, threadId }),
+          new ProviderAdapterSessionNotFoundError({ provider: PROVIDER, threadId }),
         );
       }
       return Effect.succeed(ctx);
     };
 
-    const stopSessionInternal = (ctx: CursorSessionContext) =>
+    const stopSessionInternal = (ctx: KiroSessionContext) =>
       Effect.gen(function* () {
         if (ctx.stopped) return;
         ctx.stopped = true;
@@ -522,33 +466,33 @@ export function makeCoreAcpAdapter<Settings>(
         yield* offerRuntimeEvent({
           type: "session.exited",
           ...(yield* makeEventStamp()),
-          provider: provider,
+          provider: PROVIDER,
           threadId: ctx.threadId,
           payload: { exitKind: "graceful" },
         });
       });
 
-    const startSession: ProviderAdapterShape<ProviderAdapterError>["startSession"] = (input) =>
+    const startSession: KiroAdapterShape["startSession"] = (input) =>
       withThreadLock(
         input.threadId,
         Effect.gen(function* () {
-          if (input.provider !== undefined && input.provider !== provider) {
+          if (input.provider !== undefined && input.provider !== PROVIDER) {
             return yield* new ProviderAdapterValidationError({
-              provider: provider,
+              provider: PROVIDER,
               operation: "startSession",
-              issue: `Expected provider '${provider}' but received '${input.provider}'.`,
+              issue: `Expected provider '${PROVIDER}' but received '${input.provider}'.`,
             });
           }
           if (!input.cwd?.trim()) {
             return yield* new ProviderAdapterValidationError({
-              provider: provider,
+              provider: PROVIDER,
               operation: "startSession",
               issue: "cwd is required and must be non-empty.",
             });
           }
 
           const cwd = path.resolve(input.cwd.trim());
-          const initialModelSelection =
+          const kiroModelSelection =
             input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
           const existing = sessions.get(input.threadId);
           if (existing && !existing.stopped) {
@@ -562,158 +506,68 @@ export function makeCoreAcpAdapter<Settings>(
           yield* Effect.addFinalizer(() =>
             sessionScopeTransferred ? Effect.void : Scope.close(sessionScope, Exit.void),
           );
-          let ctx!: CursorSessionContext;
+          let ctx!: KiroSessionContext;
 
-          const resumeSessionId = parseAcpResume(input.resumeCursor)?.sessionId;
+          const resumeSessionId = parseKiroResume(input.resumeCursor)?.sessionId;
           const acpNativeLoggers = makeAcpNativeLoggers({
             nativeEventLogger,
-            provider: provider,
+            provider: PROVIDER,
             threadId: input.threadId,
           });
 
-          const effectiveSettings = definition.resolveSettings
-            ? yield* definition.resolveSettings
-            : definition.settings;
+          // Resolve the KiroSettings used to spawn the ACP child. Production
+          // leaves `options.resolveSettings` undefined so we use the value
+          // captured at adapter construction — per-instance isolation is
+          // enforced by the hydration layer rebuilding this adapter whenever
+          // its config changes. Tests set `resolveSettings` to pull the latest
+          // snapshot from `ServerSettingsService` so that mid-suite
+          // `updateSettings({ providers: { kiro: { binaryPath } } })` calls
+          // actually take effect when the next session spawns.
+          const effectiveKiroSettings = options?.resolveSettings
+            ? yield* options.resolveSettings
+            : kiroSettings;
 
           const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
-          const acp = yield* definition
-            .makeRuntime({
-              settings: effectiveSettings,
-              ...(options?.environment ? { environment: options.environment } : {}),
-              childProcessSpawner,
-              cwd,
-              ...(resumeSessionId ? { resumeSessionId } : {}),
-              clientInfo: { name: "t3-code", version: "0.0.0" },
-              ...(definition.supportsMcpServers && mcpSession
-                ? {
-                    mcpServers: [
-                      {
-                        type: "http" as const,
-                        name: "t3-code",
-                        url: mcpSession.endpoint,
-                        headers: [
-                          {
-                            name: "Authorization",
-                            value: mcpSession.authorizationHeader,
-                          },
-                        ],
-                      },
-                    ],
-                  }
-                : {}),
-              ...acpNativeLoggers,
-            })
-            .pipe(
-              Effect.provideService(Crypto.Crypto, crypto),
-              Effect.provideService(Scope.Scope, sessionScope),
-              Effect.mapError(
-                (cause) =>
-                  new ProviderAdapterProcessError({
-                    provider: provider,
-                    threadId: input.threadId,
-                    detail: cause.message,
-                    cause,
-                  }),
-              ),
-            );
-          const started = yield* Effect.gen(function* () {
-            if (definition.supportsCursorExtensions) {
-              yield* acp.handleExtRequest(
-                "cursor/ask_question",
-                CursorAskQuestionRequest,
-                (params) =>
-                  mapExtensionFailure(
-                    Effect.gen(function* () {
-                      yield* logNative(
-                        input.threadId,
-                        "cursor/ask_question",
-                        params,
-                        "acp.cursor.extension",
-                      );
-                      const requestId = ApprovalRequestId.make(yield* randomUUIDv4);
-                      const runtimeRequestId = RuntimeRequestId.make(requestId);
-                      const answers = yield* Deferred.make<ProviderUserInputAnswers>();
-                      pendingUserInputs.set(requestId, { answers });
-                      yield* offerRuntimeEvent({
-                        type: "user-input.requested",
-                        ...(yield* makeEventStamp()),
-                        provider: provider,
-                        threadId: input.threadId,
-                        turnId: ctx?.activeTurnId,
-                        requestId: runtimeRequestId,
-                        payload: { questions: extractAskQuestions(params) },
-                        raw: {
-                          source: "acp.cursor.extension",
-                          method: "cursor/ask_question",
-                          payload: params,
+          const acp = yield* makeKiroAcpRuntime({
+            kiroSettings: effectiveKiroSettings,
+            ...(options?.environment ? { environment: options.environment } : {}),
+            childProcessSpawner,
+            cwd,
+            runtimeMode: input.runtimeMode,
+            ...(resumeSessionId ? { resumeSessionId } : {}),
+            clientInfo: { name: "t3-code", version: "0.0.0" },
+            ...(mcpSession
+              ? {
+                  mcpServers: [
+                    {
+                      type: "http" as const,
+                      name: "t3-code",
+                      url: mcpSession.endpoint,
+                      headers: [
+                        {
+                          name: "Authorization",
+                          value: mcpSession.authorizationHeader,
                         },
-                      });
-                      const resolved = yield* Deferred.await(answers);
-                      pendingUserInputs.delete(requestId);
-                      yield* offerRuntimeEvent({
-                        type: "user-input.resolved",
-                        ...(yield* makeEventStamp()),
-                        provider: provider,
-                        threadId: input.threadId,
-                        turnId: ctx?.activeTurnId,
-                        requestId: runtimeRequestId,
-                        payload: { answers: resolved },
-                      });
-                      return { answers: resolved };
-                    }),
-                  ),
-              );
-              yield* acp.handleExtRequest("cursor/create_plan", CursorCreatePlanRequest, (params) =>
-                mapExtensionFailure(
-                  Effect.gen(function* () {
-                    yield* logNative(
-                      input.threadId,
-                      "cursor/create_plan",
-                      params,
-                      "acp.cursor.extension",
-                    );
-                    yield* offerRuntimeEvent({
-                      type: "turn.proposed.completed",
-                      ...(yield* makeEventStamp()),
-                      provider: provider,
-                      threadId: input.threadId,
-                      turnId: ctx?.activeTurnId,
-                      payload: { planMarkdown: extractPlanMarkdown(params) },
-                      raw: {
-                        source: "acp.cursor.extension",
-                        method: "cursor/create_plan",
-                        payload: params,
-                      },
-                    });
-                    return { accepted: true } as const;
-                  }),
-                ),
-              );
-              yield* acp.handleExtNotification(
-                "cursor/update_todos",
-                CursorUpdateTodosRequest,
-                (params) =>
-                  mapExtensionFailure(
-                    Effect.gen(function* () {
-                      yield* logNative(
-                        input.threadId,
-                        "cursor/update_todos",
-                        params,
-                        "acp.cursor.extension",
-                      );
-                      if (ctx) {
-                        yield* emitPlanUpdate(
-                          ctx,
-                          extractTodosAsPlan(params),
-                          params,
-                          "acp.cursor.extension",
-                          "cursor/update_todos",
-                        );
-                      }
-                    }),
-                  ),
-              );
-            }
+                      ],
+                    },
+                  ],
+                }
+              : {}),
+            ...acpNativeLoggers,
+          }).pipe(
+            Effect.provideService(Crypto.Crypto, crypto),
+            Effect.provideService(Scope.Scope, sessionScope),
+            Effect.mapError(
+              (cause) =>
+                new ProviderAdapterProcessError({
+                  provider: PROVIDER,
+                  threadId: input.threadId,
+                  detail: cause.message,
+                  cause,
+                }),
+            ),
+          );
+          const started = yield* Effect.gen(function* () {
             yield* acp.handleRequestPermission((params) =>
               mapExtensionFailure(
                 Effect.gen(function* () {
@@ -745,7 +599,7 @@ export function makeCoreAcpAdapter<Settings>(
                   yield* offerRuntimeEvent(
                     makeAcpRequestOpenedEvent({
                       stamp: yield* makeEventStamp(),
-                      provider: provider,
+                      provider: PROVIDER,
                       threadId: input.threadId,
                       turnId: ctx?.activeTurnId,
                       requestId: runtimeRequestId,
@@ -765,7 +619,7 @@ export function makeCoreAcpAdapter<Settings>(
                   yield* offerRuntimeEvent(
                     makeAcpRequestResolvedEvent({
                       stamp: yield* makeEventStamp(),
-                      provider: provider,
+                      provider: PROVIDER,
                       threadId: input.threadId,
                       turnId: ctx?.activeTurnId,
                       requestId: runtimeRequestId,
@@ -782,32 +636,31 @@ export function makeCoreAcpAdapter<Settings>(
             return yield* acp.start();
           }).pipe(
             Effect.mapError((error) =>
-              mapAcpToAdapterError(provider, input.threadId, "session/start", error),
+              mapAcpToAdapterError(PROVIDER, input.threadId, "session/start", error),
             ),
           );
 
           yield* applyRequestedSessionConfiguration({
             runtime: acp,
+            providerSessionId: started.sessionId,
             runtimeMode: input.runtimeMode,
             interactionMode: undefined,
-            modelSelection: initialModelSelection,
-            configureModes: definition.configureModes,
-            applyModelSelection: definition.applyModelSelection,
+            modelSelection: kiroModelSelection,
             mapError: ({ cause, method }) =>
-              mapAcpToAdapterError(provider, input.threadId, method, cause),
+              mapAcpToAdapterError(PROVIDER, input.threadId, method, cause),
           });
 
           const now = yield* nowIso;
           const session: ProviderSession = {
-            provider: provider,
+            provider: PROVIDER,
             providerInstanceId: boundInstanceId,
             status: "ready",
             runtimeMode: input.runtimeMode,
             cwd,
-            model: initialModelSelection?.model,
+            model: kiroModelSelection?.model,
             threadId: input.threadId,
             resumeCursor: {
-              schemaVersion: ACP_RESUME_VERSION,
+              schemaVersion: KIRO_RESUME_VERSION,
               sessionId: started.sessionId,
             },
             createdAt: now,
@@ -816,6 +669,7 @@ export function makeCoreAcpAdapter<Settings>(
 
           ctx = {
             threadId: input.threadId,
+            providerSessionId: started.sessionId,
             session,
             scope: sessionScope,
             acp,
@@ -842,7 +696,7 @@ export function makeCoreAcpAdapter<Settings>(
                     yield* offerRuntimeEvent(
                       makeAcpAssistantItemEvent({
                         stamp: yield* makeEventStamp(),
-                        provider: provider,
+                        provider: PROVIDER,
                         threadId: ctx.threadId,
                         turnId: ctx.activeTurnId,
                         itemId: event.itemId,
@@ -854,7 +708,7 @@ export function makeCoreAcpAdapter<Settings>(
                     yield* offerRuntimeEvent(
                       makeAcpAssistantItemEvent({
                         stamp: yield* makeEventStamp(),
-                        provider: provider,
+                        provider: PROVIDER,
                         threadId: ctx.threadId,
                         turnId: ctx.activeTurnId,
                         itemId: event.itemId,
@@ -887,7 +741,7 @@ export function makeCoreAcpAdapter<Settings>(
                     yield* offerRuntimeEvent(
                       makeAcpToolCallEvent({
                         stamp: yield* makeEventStamp(),
-                        provider: provider,
+                        provider: PROVIDER,
                         threadId: ctx.threadId,
                         turnId: ctx.activeTurnId,
                         toolCall: event.toolCall,
@@ -905,7 +759,7 @@ export function makeCoreAcpAdapter<Settings>(
                     yield* offerRuntimeEvent(
                       makeAcpContentDeltaEvent({
                         stamp: yield* makeEventStamp(),
-                        provider: provider,
+                        provider: PROVIDER,
                         threadId: ctx.threadId,
                         turnId: ctx.activeTurnId,
                         ...(event.itemId ? { itemId: event.itemId } : {}),
@@ -919,9 +773,7 @@ export function makeCoreAcpAdapter<Settings>(
             ),
           ).pipe(
             Effect.catch((cause) =>
-              Effect.logError(`Failed to process ${definition.displayName} runtime notification.`, {
-                cause,
-              }),
+              Effect.logError("Failed to process Kiro runtime notification.", { cause }),
             ),
             // Fork into the session scope, not the calling fiber. `forkChild`
             // makes this a child of `startSession`, and Effect interrupts a
@@ -939,21 +791,21 @@ export function makeCoreAcpAdapter<Settings>(
           yield* offerRuntimeEvent({
             type: "session.started",
             ...(yield* makeEventStamp()),
-            provider: provider,
+            provider: PROVIDER,
             threadId: input.threadId,
             payload: { resume: started.initializeResult },
           });
           yield* offerRuntimeEvent({
             type: "session.state.changed",
             ...(yield* makeEventStamp()),
-            provider: provider,
+            provider: PROVIDER,
             threadId: input.threadId,
-            payload: { state: "ready", reason: `${definition.displayName} ACP session ready` },
+            payload: { state: "ready", reason: "Kiro ACP session ready" },
           });
           yield* offerRuntimeEvent({
             type: "thread.started",
             ...(yield* makeEventStamp()),
-            provider: provider,
+            provider: PROVIDER,
             threadId: input.threadId,
             payload: { providerThreadId: started.sessionId },
           });
@@ -962,7 +814,7 @@ export function makeCoreAcpAdapter<Settings>(
         }).pipe(Effect.scoped),
       );
 
-    const sendTurn: ProviderAdapterShape<ProviderAdapterError>["sendTurn"] = (input) =>
+    const sendTurn: KiroAdapterShape["sendTurn"] = (input) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(input.threadId);
         // A sendTurn while a prompt is in flight is a steer: the agent folds
@@ -979,9 +831,10 @@ export function makeCoreAcpAdapter<Settings>(
           const turnModelSelection =
             input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
           const model = turnModelSelection?.model ?? ctx.session.model;
-          const resolvedModel = definition.resolveModel(model);
+          const resolvedModel = resolveKiroAcpBaseModelId(model);
           yield* applyRequestedSessionConfiguration({
             runtime: ctx.acp,
+            providerSessionId: ctx.providerSessionId,
             runtimeMode: ctx.session.runtimeMode,
             interactionMode: input.interactionMode,
             modelSelection:
@@ -991,10 +844,8 @@ export function makeCoreAcpAdapter<Settings>(
                     model,
                     options: turnModelSelection?.options,
                   },
-            configureModes: definition.configureModes,
-            applyModelSelection: definition.applyModelSelection,
             mapError: ({ cause, method }) =>
-              mapAcpToAdapterError(provider, input.threadId, method, cause),
+              mapAcpToAdapterError(PROVIDER, input.threadId, method, cause),
           });
           ctx.activeTurnId = turnId;
           if (steeringTurnId === undefined) {
@@ -1010,7 +861,7 @@ export function makeCoreAcpAdapter<Settings>(
             yield* offerRuntimeEvent({
               type: "turn.started",
               ...(yield* makeEventStamp()),
-              provider: provider,
+              provider: PROVIDER,
               threadId: input.threadId,
               turnId,
               payload: { model: resolvedModel },
@@ -1023,7 +874,7 @@ export function makeCoreAcpAdapter<Settings>(
           }
           if (input.attachments && input.attachments.length > 0) {
             for (const attachment of input.attachments) {
-              // Core ACP providers ingest images only. Generic files reach the agent
+              // Kiro ingests images only. Generic files reach the agent
               // through the path line ProviderService puts in the prompt.
               if (attachment.type !== "image") {
                 continue;
@@ -1034,7 +885,7 @@ export function makeCoreAcpAdapter<Settings>(
               });
               if (!attachmentPath) {
                 return yield* new ProviderAdapterRequestError({
-                  provider: provider,
+                  provider: PROVIDER,
                   method: "session/prompt",
                   detail: `Invalid attachment id '${attachment.id}'.`,
                 });
@@ -1043,7 +894,7 @@ export function makeCoreAcpAdapter<Settings>(
                 Effect.mapError(
                   (cause) =>
                     new ProviderAdapterRequestError({
-                      provider: provider,
+                      provider: PROVIDER,
                       method: "session/prompt",
                       detail: cause.message,
                       cause,
@@ -1060,7 +911,7 @@ export function makeCoreAcpAdapter<Settings>(
 
           if (promptParts.length === 0) {
             return yield* new ProviderAdapterValidationError({
-              provider: provider,
+              provider: PROVIDER,
               operation: "sendTurn",
               issue: "Turn requires non-empty text or attachments.",
             });
@@ -1072,7 +923,7 @@ export function makeCoreAcpAdapter<Settings>(
             })
             .pipe(
               Effect.mapError((error) =>
-                mapAcpToAdapterError(provider, input.threadId, "session/prompt", error),
+                mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
               ),
             );
 
@@ -1096,7 +947,7 @@ export function makeCoreAcpAdapter<Settings>(
             yield* offerRuntimeEvent({
               type: "turn.completed",
               ...(yield* makeEventStamp()),
-              provider: provider,
+              provider: PROVIDER,
               threadId: input.threadId,
               turnId,
               payload: {
@@ -1120,7 +971,7 @@ export function makeCoreAcpAdapter<Settings>(
         );
       });
 
-    const interruptTurn: ProviderAdapterShape<ProviderAdapterError>["interruptTurn"] = (threadId) =>
+    const interruptTurn: KiroAdapterShape["interruptTurn"] = (threadId) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
         yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
@@ -1128,13 +979,13 @@ export function makeCoreAcpAdapter<Settings>(
         yield* Effect.ignore(
           ctx.acp.cancel.pipe(
             Effect.mapError((error) =>
-              mapAcpToAdapterError(provider, threadId, "session/cancel", error),
+              mapAcpToAdapterError(PROVIDER, threadId, "session/cancel", error),
             ),
           ),
         );
       });
 
-    const respondToRequest: ProviderAdapterShape<ProviderAdapterError>["respondToRequest"] = (
+    const respondToRequest: KiroAdapterShape["respondToRequest"] = (
       threadId,
       requestId,
       decision,
@@ -1144,7 +995,7 @@ export function makeCoreAcpAdapter<Settings>(
         const pending = ctx.pendingApprovals.get(requestId);
         if (!pending) {
           return yield* new ProviderAdapterRequestError({
-            provider: provider,
+            provider: PROVIDER,
             method: "session/request_permission",
             detail: `Unknown pending approval request: ${requestId}`,
           });
@@ -1152,7 +1003,7 @@ export function makeCoreAcpAdapter<Settings>(
         yield* Deferred.succeed(pending.decision, decision);
       });
 
-    const respondToUserInput: ProviderAdapterShape<ProviderAdapterError>["respondToUserInput"] = (
+    const respondToUserInput: KiroAdapterShape["respondToUserInput"] = (
       threadId,
       requestId,
       answers,
@@ -1162,29 +1013,26 @@ export function makeCoreAcpAdapter<Settings>(
         const pending = ctx.pendingUserInputs.get(requestId);
         if (!pending) {
           return yield* new ProviderAdapterRequestError({
-            provider: provider,
-            method: "cursor/ask_question",
+            provider: PROVIDER,
+            method: "session/elicitation",
             detail: `Unknown pending user-input request: ${requestId}`,
           });
         }
         yield* Deferred.succeed(pending.answers, answers);
       });
 
-    const readThread: ProviderAdapterShape<ProviderAdapterError>["readThread"] = (threadId) =>
+    const readThread: KiroAdapterShape["readThread"] = (threadId) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
         return { threadId, turns: ctx.turns };
       });
 
-    const rollbackThread: ProviderAdapterShape<ProviderAdapterError>["rollbackThread"] = (
-      threadId,
-      numTurns,
-    ) =>
+    const rollbackThread: KiroAdapterShape["rollbackThread"] = (threadId, numTurns) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
         if (!Number.isInteger(numTurns) || numTurns < 1) {
           return yield* new ProviderAdapterValidationError({
-            provider: provider,
+            provider: PROVIDER,
             operation: "rollbackThread",
             issue: "numTurns must be an integer >= 1.",
           });
@@ -1194,7 +1042,7 @@ export function makeCoreAcpAdapter<Settings>(
         return { threadId, turns: ctx.turns };
       });
 
-    const stopSession: ProviderAdapterShape<ProviderAdapterError>["stopSession"] = (threadId) =>
+    const stopSession: KiroAdapterShape["stopSession"] = (threadId) =>
       withThreadLock(
         threadId,
         Effect.gen(function* () {
@@ -1203,24 +1051,22 @@ export function makeCoreAcpAdapter<Settings>(
         }),
       );
 
-    const listSessions: ProviderAdapterShape<ProviderAdapterError>["listSessions"] = () =>
+    const listSessions: KiroAdapterShape["listSessions"] = () =>
       Effect.sync(() => Array.from(sessions.values(), (c) => ({ ...c.session })));
 
-    const hasSession: ProviderAdapterShape<ProviderAdapterError>["hasSession"] = (threadId) =>
+    const hasSession: KiroAdapterShape["hasSession"] = (threadId) =>
       Effect.sync(() => {
         const c = sessions.get(threadId);
         return c !== undefined && !c.stopped;
       });
 
-    const stopAll: ProviderAdapterShape<ProviderAdapterError>["stopAll"] = () =>
+    const stopAll: KiroAdapterShape["stopAll"] = () =>
       Effect.forEach(sessions.values(), stopSessionInternal, { discard: true });
 
     yield* Effect.addFinalizer(() =>
       Effect.forEach(sessions.values(), stopSessionInternal, { discard: true }).pipe(
         Effect.catch((cause) =>
-          Effect.logError(`Failed to emit ${definition.displayName} session shutdown event.`, {
-            cause,
-          }),
+          Effect.logError("Failed to emit Kiro session shutdown event.", { cause }),
         ),
         Effect.tap(() => PubSub.shutdown(runtimeEventPubSub)),
         Effect.tap(() => managedNativeEventLogger?.close() ?? Effect.void),
@@ -1230,7 +1076,7 @@ export function makeCoreAcpAdapter<Settings>(
     const streamEvents = Stream.fromPubSub(runtimeEventPubSub);
 
     return {
-      provider: provider,
+      provider: PROVIDER,
       capabilities: { sessionModelSwitch: "in-session" },
       startSession,
       sendTurn,
@@ -1244,35 +1090,6 @@ export function makeCoreAcpAdapter<Settings>(
       hasSession,
       stopAll,
       streamEvents,
-    } satisfies ProviderAdapterShape<ProviderAdapterError>;
+    } satisfies KiroAdapterShape;
   });
-}
-
-export function makeCursorAdapter(
-  cursorSettings: CursorSettings,
-  options?: CursorAdapterLiveOptions,
-) {
-  return makeCoreAcpAdapter(
-    {
-      provider: CURSOR_PROVIDER,
-      displayName: "Cursor",
-      defaultInstanceId: ProviderInstanceId.make("cursor"),
-      settings: cursorSettings,
-      ...(options?.resolveSettings ? { resolveSettings: options.resolveSettings } : {}),
-      supportsCursorExtensions: true,
-      supportsMcpServers: true,
-      configureModes: true,
-      makeRuntime: ({ settings, ...input }) =>
-        makeCursorAcpRuntime({ cursorSettings: settings, ...input }),
-      applyModelSelection: ({ runtime, model, selections, mapError }) =>
-        applyCursorAcpModelSelection({
-          runtime,
-          model,
-          selections,
-          mapError: ({ cause }) => mapError(cause),
-        }),
-      resolveModel: resolveCursorAcpBaseModelId,
-    },
-    options,
-  );
 }
