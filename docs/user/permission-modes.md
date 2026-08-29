@@ -30,4 +30,7 @@ actions still require approval.
 Antigravity can still send native approval requests in **Full access**. It only offers remembered
 approvals for actions that support them.
 
+Kiro maps **Full access** to its trust-all-tools mode. Other runtime modes retain Kiro's normal
+approval prompts. Selecting Plan in the composer switches Kiro to its Planner workflow.
+
 See the [provider guides](./install.md#providers) for setup and provider-specific limits.

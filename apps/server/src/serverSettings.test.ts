@@ -801,6 +801,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         providers: {
           cursor: { enabled: true },
           grok: { enabled: true },
+          kiro: { enabled: true },
           opencode: { enabled: true },
         },
       });
@@ -811,6 +812,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const persisted = JSON.parse(raw);
       assert.isTrue(persisted.providers.cursor.enabled);
       assert.isTrue(persisted.providers.grok.enabled);
+      assert.isTrue(persisted.providers.kiro.enabled);
       assert.isTrue(persisted.providers.opencode.enabled);
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
@@ -823,6 +825,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
 
       const initial = yield* serverSettings.getSettings;
       assert.isFalse(initial.providers.grok.enabled);
+      assert.isFalse(initial.providers.kiro.enabled);
       assert.isFalse(initial.providers.opencode.enabled);
       assert.isFalse(initial.providers.cursor.enabled);
 
@@ -837,6 +840,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       });
 
       assert.isFalse(next.providers.grok.enabled);
+      assert.isFalse(next.providers.kiro.enabled);
       assert.isFalse(next.providers.opencode.enabled);
       assert.isFalse(next.providers.cursor.enabled);
       const grok = next.providerInstances[ProviderInstanceId.make("grok")];
@@ -848,6 +852,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const persisted = JSON.parse(raw);
       assert.isFalse(persisted.providers.cursor.enabled);
       assert.isFalse(persisted.providers.grok.enabled);
+      assert.isFalse(persisted.providers.kiro.enabled);
       assert.isFalse(persisted.providers.opencode.enabled);
       assert.isUndefined(persisted.providerInstances.grok.enabled);
     }).pipe(Effect.provide(makeServerSettingsLayer())),
@@ -1041,6 +1046,9 @@ it.layer(NodeServices.layer)("server settings", (it) => {
             enabled: false,
           },
           grok: {
+            enabled: false,
+          },
+          kiro: {
             enabled: false,
           },
           opencode: {
