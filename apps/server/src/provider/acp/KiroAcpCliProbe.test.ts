@@ -15,6 +15,7 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import { describe, expect } from "vite-plus/test";
 
 import { makeKiroAcpRuntime } from "./KiroAcpSupport.ts";
+import { makeKiroCommandInventory } from "./KiroAcpCommands.ts";
 import { checkKiroProviderStatus } from "../Layers/KiroProvider.ts";
 
 const decodeKiroSettings = Schema.decodeSync(KiroSettings);
@@ -64,6 +65,18 @@ describe.runIf(process.env.T3_KIRO_ACP_PROBE === "1")("Kiro ACP CLI probe", () =
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("advertises slash commands through the Kiro ACP extension", () =>
+    Effect.gen(function* () {
+      const runtime = yield* makeProbeRuntime;
+      const inventory = yield* makeKiroCommandInventory(runtime);
+      yield* runtime.start();
+      const commands = yield* inventory.awaitCommands.pipe(Effect.timeout("2 seconds"));
+
+      expect(commands.length).toBeGreaterThan(0);
+      expect(commands.some((command) => command.name === "/help")).toBe(true);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("reports the installed CLI, account, and discovered models", () =>
     Effect.gen(function* () {
       const snapshot = yield* checkKiroProviderStatus(
@@ -76,6 +89,7 @@ describe.runIf(process.env.T3_KIRO_ACP_PROBE === "1")("Kiro ACP CLI probe", () =
       expect(snapshot.installed).toBe(true);
       expect(snapshot.auth.status).toBe("authenticated");
       expect(snapshot.models.length).toBeGreaterThan(1);
+      expect(snapshot.slashCommands.some((command) => command.name === "help")).toBe(true);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

@@ -19,6 +19,7 @@ import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { makeKiroAcpRuntime, resolveKiroAcpBaseModelId } from "../acp/KiroAcpSupport.ts";
+import { buildKiroSlashCommands, makeKiroCommandInventory } from "../acp/KiroAcpCommands.ts";
 import {
   buildServerProvider,
   isCommandMissingCause,
@@ -41,6 +42,7 @@ const KIRO_PRESENTATION = {
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({ optionDescriptors: [] });
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const ACP_MODEL_DISCOVERY_TIMEOUT_MS = 15_000;
+const ACP_COMMAND_DISCOVERY_TIMEOUT_MS = 2_000;
 const KIRO_FALLBACK_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
     slug: "auto",
@@ -101,7 +103,7 @@ function runKiroCommand(
   });
 }
 
-const discoverKiroModelsViaAcp = (
+const discoverKiroCapabilitiesViaAcp = (
   settings: KiroSettings,
   environment: NodeJS.ProcessEnv,
   cwd: string,
@@ -115,8 +117,16 @@ const discoverKiroModelsViaAcp = (
       cwd,
       clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
     });
+    const commandInventory = yield* makeKiroCommandInventory(acp);
     const started = yield* acp.start();
-    return modelsFromSessionState(started.sessionSetupResult.models);
+    const availableCommands = yield* commandInventory.awaitCommands.pipe(
+      Effect.timeoutOption(ACP_COMMAND_DISCOVERY_TIMEOUT_MS),
+      Effect.map(Option.getOrElse(() => [])),
+    );
+    return {
+      models: modelsFromSessionState(started.sessionSetupResult.models),
+      slashCommands: buildKiroSlashCommands(availableCommands),
+    };
   }).pipe(Effect.scoped);
 
 export function buildInitialKiroProviderSnapshot(
@@ -243,7 +253,7 @@ export const checkKiroProviderStatus = Effect.fn("checkKiroProviderStatus")(func
     });
   }
 
-  const discoveryExit = yield* discoverKiroModelsViaAcp(settings, environment, cwd).pipe(
+  const discoveryExit = yield* discoverKiroCapabilitiesViaAcp(settings, environment, cwd).pipe(
     Effect.timeoutOption(ACP_MODEL_DISCOVERY_TIMEOUT_MS),
     Effect.exit,
   );
@@ -281,12 +291,13 @@ export const checkKiroProviderStatus = Effect.fn("checkKiroProviderStatus")(func
     });
   }
 
-  const discoveredModels = discoveryExit.value.value;
+  const discovered = discoveryExit.value.value;
   return buildServerProvider({
     presentation: KIRO_PRESENTATION,
     enabled: true,
     checkedAt,
-    models: kiroModelsFromSettings(settings.customModels, discoveredModels),
+    models: kiroModelsFromSettings(settings.customModels, discovered.models),
+    slashCommands: discovered.slashCommands,
     probe: {
       installed: true,
       version,
