@@ -71,9 +71,10 @@ describe("KiroAcpSupport", () => {
     expect(resolveKiroAcpBaseModelId(" claude-sonnet-4.5 ")).toBe("claude-sonnet-4.5");
   });
 
-  it.effect("selects the requested model through standard ACP", () =>
+  it.effect("selects the requested model and effort through ACP", () =>
     Effect.gen(function* () {
       const selections: string[] = [];
+      const requests: Array<{ method: string; payload: unknown }> = [];
       yield* applyKiroAcpModelSelection({
         runtime: {
           setSessionModel: (modelId) =>
@@ -81,12 +82,28 @@ describe("KiroAcpSupport", () => {
               selections.push(modelId);
               return {};
             }),
+          request: (method, payload) =>
+            Effect.sync(() => {
+              requests.push({ method, payload });
+              return { success: true };
+            }),
         },
+        sessionId: "kiro-session-1",
         model: "claude-haiku-4.5",
+        selections: [{ id: "effort", value: "high" }],
         mapError: ({ cause }) => cause,
       });
 
       expect(selections).toEqual(["claude-haiku-4.5"]);
+      expect(requests).toEqual([
+        {
+          method: "_kiro.dev/commands/execute",
+          payload: {
+            sessionId: "kiro-session-1",
+            command: { command: "effort", args: { value: "high" } },
+          },
+        },
+      ]);
     }),
   );
 

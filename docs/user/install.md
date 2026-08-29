@@ -85,7 +85,9 @@ and CLI version.
 
 Kiro exposes its available models and Default and Planner workflows through ACP. T3 Code refreshes
 those choices from the installed CLI, so the model list can change when Kiro updates. Kiro's ACP
-slash commands appear in the chat slash menu after provider discovery.
+slash commands appear in the chat slash menu after provider discovery. For models that support
+reasoning effort, T3 Code also discovers Kiro's model-specific effort levels and applies the selected
+level to the active ACP session.
 
 Kiro CLI supports Windows 11 natively. Install it from PowerShell, then open a new terminal so the
 updated `PATH` is visible to T3 Code:

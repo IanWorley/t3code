@@ -80,15 +80,19 @@ export const makeKiroTextGeneration = Effect.fn("makeKiroTextGeneration")(functi
       });
 
       const promptResult = yield* Effect.gen(function* () {
-        yield* runtime.start();
+        const started = yield* runtime.start();
         yield* applyKiroAcpModelSelection({
           runtime,
+          sessionId: started.sessionId,
           model: modelSelection.model,
           selections: modelSelection.options,
-          mapError: ({ cause }) =>
+          mapError: ({ cause, step }) =>
             new TextGenerationError({
               operation,
-              detail: "Failed to set Kiro ACP model for text generation.",
+              detail:
+                step === "set-effort"
+                  ? "Failed to set Kiro ACP effort for text generation."
+                  : "Failed to set Kiro ACP model for text generation.",
               cause,
             }),
         });

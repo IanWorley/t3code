@@ -65,6 +65,7 @@ import {
   parsePermissionRequest,
 } from "../acp/AcpRuntimeModel.ts";
 import { makeAcpNativeLoggerFactory } from "../acp/AcpNativeLogging.ts";
+import { KIRO_COMMANDS_EXECUTE_METHOD } from "../acp/KiroAcpCommands.ts";
 import {
   applyKiroAcpModelSelection,
   makeKiroAcpRuntime,
@@ -119,6 +120,7 @@ interface PendingUserInput {
 
 interface KiroSessionContext {
   readonly threadId: ThreadId;
+  readonly providerSessionId: string;
   session: ProviderSession;
   readonly scope: Scope.Closeable;
   readonly acp: AcpSessionRuntime.AcpSessionRuntime["Service"];
@@ -242,6 +244,7 @@ function resolveRequestedModeId(input: {
 
 function applyRequestedSessionConfiguration<E>(input: {
   readonly runtime: AcpSessionRuntime.AcpSessionRuntime["Service"];
+  readonly providerSessionId: string;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode | undefined;
   readonly modelSelection:
@@ -252,19 +255,20 @@ function applyRequestedSessionConfiguration<E>(input: {
     | undefined;
   readonly mapError: (context: {
     readonly cause: import("effect-acp/errors").AcpError;
-    readonly method: "session/set_model" | "session/set_mode";
+    readonly method: typeof KIRO_COMMANDS_EXECUTE_METHOD | "session/set_model" | "session/set_mode";
   }) => E;
 }): Effect.Effect<void, E> {
   return Effect.gen(function* () {
     if (input.modelSelection) {
       yield* applyKiroAcpModelSelection({
         runtime: input.runtime,
+        sessionId: input.providerSessionId,
         model: input.modelSelection.model,
         selections: input.modelSelection.options,
-        mapError: ({ cause }) =>
+        mapError: ({ cause, step }) =>
           input.mapError({
             cause,
-            method: "session/set_model",
+            method: step === "set-effort" ? KIRO_COMMANDS_EXECUTE_METHOD : "session/set_model",
           }),
       });
     }
@@ -644,6 +648,7 @@ export function makeKiroAdapter(kiroSettings: KiroSettings, options?: KiroAdapte
 
           yield* applyRequestedSessionConfiguration({
             runtime: acp,
+            providerSessionId: started.sessionId,
             runtimeMode: input.runtimeMode,
             interactionMode: undefined,
             modelSelection: kiroModelSelection,
@@ -670,6 +675,7 @@ export function makeKiroAdapter(kiroSettings: KiroSettings, options?: KiroAdapte
 
           ctx = {
             threadId: input.threadId,
+            providerSessionId: started.sessionId,
             session,
             scope: sessionScope,
             acp,
@@ -834,6 +840,7 @@ export function makeKiroAdapter(kiroSettings: KiroSettings, options?: KiroAdapte
           const resolvedModel = resolveKiroAcpBaseModelId(model);
           yield* applyRequestedSessionConfiguration({
             runtime: ctx.acp,
+            providerSessionId: ctx.providerSessionId,
             runtimeMode: ctx.session.runtimeMode,
             interactionMode: input.interactionMode,
             modelSelection:

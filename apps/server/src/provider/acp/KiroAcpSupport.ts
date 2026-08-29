@@ -4,7 +4,7 @@ import {
   type ProviderOptionSelection,
   type RuntimeMode,
 } from "@t3tools/contracts";
-import { normalizeModelSlug } from "@t3tools/shared/model";
+import { getProviderOptionStringSelectionValue, normalizeModelSlug } from "@t3tools/shared/model";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -13,8 +13,10 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 import type * as EffectAcpErrors from "effect-acp/errors";
 
 import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
+import { setKiroEffort } from "./KiroAcpCommands.ts";
 
 const KIRO_DRIVER_KIND = ProviderDriverKind.make("kiro");
+export const KIRO_EFFORT_OPTION_ID = "effort";
 
 type KiroAcpRuntimeSettings = Pick<KiroSettings, "binaryPath">;
 
@@ -79,16 +81,31 @@ export function resolveKiroAcpBaseModelId(model: string | null | undefined): str
 }
 
 export function applyKiroAcpModelSelection<E>(input: {
-  readonly runtime: Pick<AcpSessionRuntime.AcpSessionRuntime["Service"], "setSessionModel">;
+  readonly runtime: Pick<
+    AcpSessionRuntime.AcpSessionRuntime["Service"],
+    "request" | "setSessionModel"
+  >;
+  readonly sessionId: string;
   readonly model: string | null | undefined;
   readonly selections?: ReadonlyArray<ProviderOptionSelection> | null | undefined;
   readonly mapError: (context: {
     readonly cause: EffectAcpErrors.AcpError;
-    readonly step: "set-model";
+    readonly step: "set-effort" | "set-model";
   }) => E;
 }): Effect.Effect<void, E> {
-  return input.runtime.setSessionModel(resolveKiroAcpBaseModelId(input.model)).pipe(
-    Effect.asVoid,
-    Effect.mapError((cause) => input.mapError({ cause, step: "set-model" })),
-  );
+  return Effect.gen(function* () {
+    yield* input.runtime
+      .setSessionModel(resolveKiroAcpBaseModelId(input.model))
+      .pipe(Effect.mapError((cause) => input.mapError({ cause, step: "set-model" })));
+
+    const effort = getProviderOptionStringSelectionValue(
+      input.selections,
+      KIRO_EFFORT_OPTION_ID,
+    )?.trim();
+    if (effort) {
+      yield* setKiroEffort(input.runtime, input.sessionId, effort).pipe(
+        Effect.mapError((cause) => input.mapError({ cause, step: "set-effort" })),
+      );
+    }
+  });
 }

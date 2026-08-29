@@ -18,8 +18,18 @@ import * as Result from "effect/Result";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-import { makeKiroAcpRuntime, resolveKiroAcpBaseModelId } from "../acp/KiroAcpSupport.ts";
-import { buildKiroSlashCommands, makeKiroCommandInventory } from "../acp/KiroAcpCommands.ts";
+import {
+  buildKiroSlashCommands,
+  getKiroCommandOptions,
+  KIRO_EFFORT_COMMAND,
+  type KiroCommandOption,
+  makeKiroCommandInventory,
+} from "../acp/KiroAcpCommands.ts";
+import {
+  KIRO_EFFORT_OPTION_ID,
+  makeKiroAcpRuntime,
+  resolveKiroAcpBaseModelId,
+} from "../acp/KiroAcpSupport.ts";
 import {
   buildServerProvider,
   isCommandMissingCause,
@@ -43,6 +53,7 @@ const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({ optionDe
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const ACP_MODEL_DISCOVERY_TIMEOUT_MS = 15_000;
 const ACP_COMMAND_DISCOVERY_TIMEOUT_MS = 2_000;
+const KIRO_ACTIVE_OPTION_SUFFIX = /\s*\[active\]\s*$/iu;
 const KIRO_FALLBACK_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
     slug: "auto",
@@ -59,8 +70,37 @@ function kiroModelsFromSettings(
   return providerModelsFromSettings(builtInModels, customModels ?? [], EMPTY_CAPABILITIES);
 }
 
+export function buildKiroModelCapabilities(
+  effortOptions: ReadonlyArray<KiroCommandOption>,
+): ModelCapabilities {
+  if (effortOptions.length === 0) return EMPTY_CAPABILITIES;
+  const options = effortOptions.map((option) => {
+    const isDefault = KIRO_ACTIVE_OPTION_SUFFIX.test(option.label);
+    const label = option.label.replace(KIRO_ACTIVE_OPTION_SUFFIX, "").trim() || option.value;
+    return {
+      id: option.value,
+      label,
+      ...(option.description?.trim() ? { description: option.description.trim() } : {}),
+      ...(isDefault ? { isDefault: true } : {}),
+    };
+  });
+  const currentValue = options.find((option) => option.isDefault)?.id;
+  return createModelCapabilities({
+    optionDescriptors: [
+      {
+        id: KIRO_EFFORT_OPTION_ID,
+        label: "Effort",
+        type: "select",
+        options,
+        ...(currentValue ? { currentValue } : {}),
+      },
+    ],
+  });
+}
+
 function modelsFromSessionState(
   modelState: EffectAcpSchema.SessionModelState | null | undefined,
+  effortOptionsByModel: ReadonlyMap<string, ReadonlyArray<KiroCommandOption>> = new Map(),
 ): ReadonlyArray<ServerProviderModel> {
   if (!modelState) return [];
   const seen = new Set<string>();
@@ -73,7 +113,7 @@ function modelsFromSessionState(
         slug,
         name: model.name.trim() || slug,
         isCustom: false,
-        capabilities: EMPTY_CAPABILITIES,
+        capabilities: buildKiroModelCapabilities(effortOptionsByModel.get(model.modelId) ?? []),
       } satisfies ServerProviderModel,
     ];
   });
@@ -119,12 +159,21 @@ const discoverKiroCapabilitiesViaAcp = (
     });
     const commandInventory = yield* makeKiroCommandInventory(acp);
     const started = yield* acp.start();
+    const modelState = started.sessionSetupResult.models;
+    const effortOptionsByModel = new Map<string, ReadonlyArray<KiroCommandOption>>();
+    for (const model of modelState?.availableModels ?? []) {
+      const options = yield* acp.setSessionModel(model.modelId).pipe(
+        Effect.andThen(getKiroCommandOptions(acp, started.sessionId, KIRO_EFFORT_COMMAND)),
+        Effect.orElseSucceed(() => []),
+      );
+      effortOptionsByModel.set(model.modelId, options);
+    }
     const availableCommands = yield* commandInventory.awaitCommands.pipe(
       Effect.timeoutOption(ACP_COMMAND_DISCOVERY_TIMEOUT_MS),
       Effect.map(Option.getOrElse(() => [])),
     );
     return {
-      models: modelsFromSessionState(started.sessionSetupResult.models),
+      models: modelsFromSessionState(modelState, effortOptionsByModel),
       slashCommands: buildKiroSlashCommands(availableCommands),
     };
   }).pipe(Effect.scoped);
