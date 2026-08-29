@@ -5,4 +5,4 @@
  * package over a fork build. Keep `apps/server/package.json` named `t3` — the
  * publish command rewrites the name only while publishing.
  */
-export const NPM_PACKAGE_NAME = "@ianworley/t3";
+export const NPM_PACKAGE_NAME = "@ianworleyxyz/t3";
