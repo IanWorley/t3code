@@ -15,7 +15,7 @@ it("reports the installed service version and host paths", () => {
     formatServiceStatus(status, "0.0.29"),
     [
       "T3 Code service",
-      "  Status: installed · @ianworley/t3@0.0.29",
+      "  Status: installed · @ianworleyxyz/t3@0.0.29",
       "  Unit: /home/me/.config/systemd/user/t3code.service",
       "  Logs: /home/me/.t3/userdata/logs/boot-service.log",
     ].join("\n"),
@@ -25,7 +25,7 @@ it("reports the installed service version and host paths", () => {
 it("gives a direct repair command for a stale service", () => {
   assert.include(
     formatServiceStatus({ ...status, current: false }, "0.0.29"),
-    "Next: Run `npx @ianworley/t3@latest service update`.",
+    "Next: Run `npx @ianworleyxyz/t3@latest service update`.",
   );
 });
 

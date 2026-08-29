@@ -469,11 +469,11 @@ jobs:
           path: resource-monitor-publish/${{ matrix.resource_key }}/*
           if-no-files-found: error
 
-  # Publishes @ianworley/t3 to npm (name override lives in
-  # apps/server/scripts/cli.ts). Required for `npx @ianworley/t3 service
+  # Publishes @ianworleyxyz/t3 to npm (name override lives in
+  # apps/server/scripts/cli.ts). Required for `npx @ianworleyxyz/t3 service
   # install` and remote server self-updates, which npm-install the exact
   # version. Needs the NPM_TOKEN repository secret (automation token with
-  # publish rights to the @ianworley scope).
+  # publish rights to the @ianworleyxyz scope).
   publish_cli:
     name: Publish CLI to npm
     needs: [preflight, build]
@@ -532,7 +532,7 @@ jobs:
       - name: Check npm token
         if: env.NPM_TOKEN == ''
         run: |
-          echo "Missing NPM_TOKEN repository secret; cannot publish @ianworley/t3." >&2
+          echo "Missing NPM_TOKEN repository secret; cannot publish @ianworleyxyz/t3." >&2
           echo "Create an npm automation token with publish rights to the scope and add it as NPM_TOKEN." >&2
           exit 1
 

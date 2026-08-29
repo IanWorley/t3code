@@ -40,7 +40,7 @@ export function detectCliRunner(entryPath: string): CliRunner | null {
 
 /**
  * The package spec to suggest. The literal spec the user typed (e.g.
- * `@ianworley/t3@nightly`) is resolved away before our process starts, so
+ * `@ianworleyxyz/t3@nightly`) is resolved away before our process starts, so
  * re-derive it from the running version: nightly builds re-suggest the nightly
  * channel, anything else suggests the bare package.
  */
@@ -50,8 +50,8 @@ export function suggestedPackageSpec(version: string): string {
 
 /**
  * Render a `<package> <subcommand>` suggestion that matches how this process
- * was launched, so copy/pasting it actually works: `npx @ianworley/t3 connect`
- * suggests `npx @ianworley/t3 serve`, a global install suggests `t3 serve`,
+ * was launched, so copy/pasting it actually works: `npx @ianworleyxyz/t3 connect`
+ * suggests `npx @ianworleyxyz/t3 serve`, a global install suggests `t3 serve`,
  * and a nightly build keeps the `@nightly` tag.
  */
 export function formatCliCommand(input: {
