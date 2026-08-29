@@ -628,13 +628,7 @@ export function makeKiroAdapter(kiroSettings: KiroSettings, options?: KiroAdapte
                     }),
                   );
                   return {
-                    outcome:
-                      resolved === "cancel"
-                        ? ({ outcome: "cancelled" } as const)
-                        : {
-                            outcome: "selected" as const,
-                            optionId: acpPermissionOutcome(resolved),
-                          },
+                    outcome: acpPermissionOutcome(resolved, params.options),
                   };
                 }),
               ),
