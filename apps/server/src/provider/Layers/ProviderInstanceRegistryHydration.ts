@@ -43,12 +43,15 @@
  */
 import {
   defaultInstanceIdForDriver,
+  ProviderDriverKind,
   type ProviderInstanceConfig,
   type ProviderInstanceConfigMap,
   ServerSettings,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Equal from "effect/Equal";
 import * as Layer from "effect/Layer";
+import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 
 import { ServerSettingsService } from "../../serverSettings.ts";
@@ -56,6 +59,11 @@ import { BUILT_IN_DRIVERS, type BuiltInDriversEnv } from "../builtInDrivers.ts";
 import { ProviderInstanceRegistry } from "../Services/ProviderInstanceRegistry.ts";
 import { ProviderInstanceRegistryMutator } from "../Services/ProviderInstanceRegistryMutator.ts";
 import { ProviderInstanceRegistryMutableLayer } from "./ProviderInstanceRegistryLive.ts";
+
+const VIBEPROXY_DRIVER_KINDS = new Set([
+  ProviderDriverKind.make("codex"),
+  ProviderDriverKind.make("claudeAgent"),
+]);
 
 /**
  * Synthesize a `ProviderInstanceConfigMap` from a `ServerSettings` snapshot.
@@ -73,7 +81,9 @@ import { ProviderInstanceRegistryMutableLayer } from "./ProviderInstanceRegistry
 export const deriveProviderInstanceConfigMap = (
   settings: ServerSettings,
 ): ProviderInstanceConfigMap => {
-  const merged: Record<string, ProviderInstanceConfig> = { ...settings.providerInstances };
+  const merged: Record<string, ProviderInstanceConfig> = {
+    ...settings.providerInstances,
+  };
 
   for (const driver of BUILT_IN_DRIVERS) {
     const instanceId = defaultInstanceIdForDriver(driver.driverKind);
@@ -118,15 +128,25 @@ const SettingsWatcherLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const mutator = yield* ProviderInstanceRegistryMutator;
     const serverSettings = yield* ServerSettingsService;
+    const initialSettings = yield* serverSettings.getSettings.pipe(
+      Effect.orElseSucceed(() => undefined),
+    );
+    const previousVibeProxy = yield* Ref.make(initialSettings?.vibeProxy);
     yield* serverSettings.streamChanges.pipe(
       Stream.runForEach((next) =>
-        mutator
-          .reconcile(deriveProviderInstanceConfigMap(next))
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
+        Ref.getAndSet(previousVibeProxy, next.vibeProxy).pipe(
+          Effect.flatMap((previous) =>
+            mutator.reconcile(
+              deriveProviderInstanceConfigMap(next),
+              previous !== undefined && !Equal.equals(previous, next.vibeProxy)
+                ? { forceRebuildDrivers: VIBEPROXY_DRIVER_KINDS }
+                : undefined,
             ),
           ),
+          Effect.catchCause((cause) =>
+            Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
+          ),
+        ),
       ),
       Effect.forkScoped,
     );

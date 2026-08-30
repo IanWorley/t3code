@@ -1056,4 +1056,41 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       );
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
+
+  it.effect("stores the global VibeProxy API key outside settings.json", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+
+      const next = yield* serverSettings.updateSettings({
+        vibeProxy: {
+          url: "https://proxy.example.test",
+          apiKey: { value: "vp-secret", valueRedacted: false },
+        },
+      });
+
+      assert.deepEqual(next.vibeProxy, {
+        url: "https://proxy.example.test",
+        apiKey: { value: "vp-secret", valueRedacted: true },
+      });
+
+      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+      assert.notInclude(raw, "vp-secret");
+      assert.deepEqual(
+        // @effect-diagnostics-next-line preferSchemaOverJson:off
+        JSON.parse(raw).vibeProxy,
+        {
+          url: "https://proxy.example.test",
+          apiKey: { valueRedacted: true },
+        },
+      );
+
+      const redacted = ServerSettingsModule.redactServerSettingsForClient(next);
+      assert.deepEqual(redacted.vibeProxy.apiKey, {
+        value: "",
+        valueRedacted: true,
+      });
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
 });

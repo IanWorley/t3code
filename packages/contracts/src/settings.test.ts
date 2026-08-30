@@ -6,6 +6,7 @@ import {
   ClientSettingsSchema,
   ClientSettingsPatch,
   ClaudeSettings,
+  DEFAULT_VIBEPROXY_URL,
   DEFAULT_SERVER_SETTINGS,
   defaultEnabledForDriver,
   resolveProviderInstanceEnabled,
@@ -19,6 +20,29 @@ const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
+
+describe("VibeProxy settings", () => {
+  it("defaults to the local VibeProxy endpoint", () => {
+    expect(decodeServerSettings({}).vibeProxy).toEqual({
+      url: DEFAULT_VIBEPROXY_URL,
+      apiKey: { value: "" },
+    });
+  });
+
+  it("decodes global URL and redacted API key patches", () => {
+    expect(
+      decodeServerSettingsPatch({
+        vibeProxy: {
+          url: "https://proxy.example.test",
+          apiKey: { value: "", valueRedacted: true },
+        },
+      }).vibeProxy,
+    ).toEqual({
+      url: "https://proxy.example.test",
+      apiKey: { value: "", valueRedacted: true },
+    });
+  });
+});
 
 describe("ClaudeSettings auto-compaction", () => {
   it("uses Claude's default threshold when no override is configured", () => {

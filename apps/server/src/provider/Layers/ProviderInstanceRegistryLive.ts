@@ -222,9 +222,12 @@ const makeReconcile = <R>(input: {
   readonly state: RegistryState;
   readonly driversById: ReadonlyMap<ProviderDriverKind, AnyProviderDriver<R>>;
   readonly parentScope: Scope.Scope;
-}): ((configMap: ProviderInstanceConfigMap) => Effect.Effect<void, never, R>) => {
+}): ((
+  configMap: ProviderInstanceConfigMap,
+  options?: { readonly forceRebuildDrivers?: ReadonlySet<ProviderDriverKind> },
+) => Effect.Effect<void, never, R>) => {
   const { state, driversById, parentScope } = input;
-  return (configMap: ProviderInstanceConfigMap) =>
+  return (configMap: ProviderInstanceConfigMap, options) =>
     Effect.gen(function* () {
       const previousEntries = yield* Ref.get(state.entries);
       const previousUnavailable = yield* Ref.get(state.unavailable);
@@ -244,7 +247,11 @@ const makeReconcile = <R>(input: {
           continue;
         }
         const nextEntry = configMap[instanceId];
-        if (nextEntry !== undefined && !entryEqual(live.entry, nextEntry)) {
+        if (
+          nextEntry !== undefined &&
+          (!entryEqual(live.entry, nextEntry) ||
+            options?.forceRebuildDrivers?.has(nextEntry.driver) === true)
+        ) {
           replacedIds.add(instanceId);
         }
       }
@@ -372,8 +379,8 @@ export const makeProviderInstanceRegistry = <R>(input: {
 
     const state: RegistryState = { entries, unavailable, changes };
     const reconcileWithR = makeReconcile({ state, driversById, parentScope });
-    const reconcile: ProviderInstanceRegistryMutatorShape["reconcile"] = (configMap) =>
-      reconcileWithR(configMap).pipe(Effect.provideContext(driverContext));
+    const reconcile: ProviderInstanceRegistryMutatorShape["reconcile"] = (configMap, options) =>
+      reconcileWithR(configMap, options).pipe(Effect.provideContext(driverContext));
 
     // Hydrate the initial configMap synchronously so callers can read
     // `listInstances` immediately after this effect completes.
