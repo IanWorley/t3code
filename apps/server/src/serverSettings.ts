@@ -516,7 +516,6 @@ const make = Effect.gen(function* () {
                 new ServerSettingsError({
                   settingsPath,
                   operation: "read-secret",
-                  environmentVariable: "VibeProxy API key",
                   cause,
                 }),
             ),
@@ -600,7 +599,6 @@ const make = Effect.gen(function* () {
                   new ServerSettingsError({
                     settingsPath,
                     operation: "write-secret",
-                    environmentVariable: "VibeProxy API key",
                     cause,
                   }),
               ),
@@ -613,7 +611,6 @@ const make = Effect.gen(function* () {
                 new ServerSettingsError({
                   settingsPath,
                   operation: "remove-secret",
-                  environmentVariable: "VibeProxy API key",
                   cause,
                 }),
             ),

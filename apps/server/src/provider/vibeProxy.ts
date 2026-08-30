@@ -161,11 +161,12 @@ export function applyVibeProxyStatus(
     }
   }
   const hasRoutingWarning = !status.reachable || status.message !== undefined;
+  const shouldApplyRoutingWarning = hasRoutingWarning && snapshot.status === "ready";
   return {
     ...snapshot,
     models,
     vibeProxy: { ...status, addedModels },
-    ...(hasRoutingWarning
+    ...(shouldApplyRoutingWarning
       ? {
           status: "warning" as const,
           message: status.message ?? "VibeProxy routing is unavailable.",

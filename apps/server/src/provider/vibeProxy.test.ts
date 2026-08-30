@@ -130,6 +130,26 @@ describe("VibeProxy runtime routing", () => {
     assert.deepStrictEqual(enriched.vibeProxy?.models, ["gpt-existing", "proxy-only"]);
     assert.deepStrictEqual(enriched.vibeProxy?.addedModels, []);
   });
+
+  it("preserves a provider error when proxy routing is unavailable", () => {
+    const enriched = applyVibeProxyStatus(
+      {
+        ...BASE_PROVIDER,
+        status: "error",
+        message: "Codex CLI is not installed.",
+      },
+      {
+        enabled: true,
+        endpoint: ENDPOINT.rootUrl,
+        reachable: false,
+        models: [],
+        message: "VibeProxy is not running — requests will fail.",
+      },
+    );
+
+    assert.strictEqual(enriched.status, "error");
+    assert.strictEqual(enriched.message, "Codex CLI is not installed.");
+  });
 });
 
 const httpClientLayer = (

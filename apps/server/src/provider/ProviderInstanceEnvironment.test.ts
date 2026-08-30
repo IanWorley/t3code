@@ -3,6 +3,15 @@ import { describe, expect, it } from "vite-plus/test";
 import { mergeProviderInstanceEnvironment } from "./ProviderInstanceEnvironment.ts";
 
 describe("mergeProviderInstanceEnvironment", () => {
+  it("returns an environment that can be changed without mutating the base", () => {
+    const baseEnv = { PATH: "/bin" };
+    const merged = mergeProviderInstanceEnvironment(undefined, baseEnv);
+
+    merged.NEW_VALUE = "new";
+
+    expect(baseEnv).toEqual({ PATH: "/bin" });
+  });
+
   it("overrides inherited environment values and preserves empty strings", () => {
     expect(
       mergeProviderInstanceEnvironment(

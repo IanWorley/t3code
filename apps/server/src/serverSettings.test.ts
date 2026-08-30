@@ -118,6 +118,50 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(settingsLayer));
   });
 
+  it.effect("does not label the global VibeProxy API key as an environment variable", () => {
+    const platformCause = PlatformError.systemError({
+      _tag: "PermissionDenied",
+      module: "FileSystem",
+      method: "readFile",
+      pathOrDescriptor: "VibeProxy API key",
+      description: "Secret backend unavailable.",
+    });
+    const cause = new ServerSecretStore.SecretStoreReadError({
+      resource: "VibeProxy API key",
+      cause: platformCause,
+    });
+    const configLayer = Layer.fresh(
+      ServerConfig.layerTest(process.cwd(), {
+        prefix: "t3code-server-settings-vibeproxy-secret-failure-test-",
+      }),
+    );
+    const settingsLayer = ServerSettingsModule.layer.pipe(
+      Layer.provide(makeFailingSecretStoreLayer(cause)),
+      Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
+      Layer.provideMerge(configLayer),
+    );
+
+    return Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        '{"vibeProxy":{"apiKey":{"valueRedacted":true}}}',
+      );
+
+      const error = yield* Effect.flip(serverSettings.getSettings);
+
+      assert.deepInclude(error, {
+        _tag: "ServerSettingsError",
+        operation: "read-secret",
+      });
+      assert.isUndefined(error.environmentVariable);
+      assert.notInclude(error.message, "environment variable");
+      assert.strictEqual(error.cause, cause);
+    }).pipe(Effect.provide(settingsLayer));
+  });
+
   it.effect("identifies provider history query failures", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;
