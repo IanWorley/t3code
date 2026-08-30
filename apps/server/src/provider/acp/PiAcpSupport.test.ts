@@ -1,5 +1,6 @@
+import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect } from "vite-plus/test";
 
 import { applyPiAcpModelSelection, buildPiAcpSpawnInput } from "./PiAcpSupport.ts";
 
@@ -27,10 +28,10 @@ describe("buildPiAcpSpawnInput", () => {
 });
 
 describe("applyPiAcpModelSelection", () => {
-  it("sets Pi's model and thought-level config options", async () => {
-    const calls: Array<{ readonly id: string; readonly value: string }> = [];
-    await Effect.runPromise(
-      applyPiAcpModelSelection({
+  it.effect("sets Pi's model and thought-level config options", () =>
+    Effect.gen(function* () {
+      const calls: Array<{ readonly id: string; readonly value: string }> = [];
+      yield* applyPiAcpModelSelection({
         runtime: {
           setModel: (value) =>
             Effect.sync(() => {
@@ -45,19 +46,19 @@ describe("applyPiAcpModelSelection", () => {
         model: "anthropic/claude-sonnet-4-6",
         selections: [{ id: "reasoningEffort", value: "high" }],
         mapError: ({ cause }) => cause,
-      }),
-    );
+      });
 
-    expect(calls).toEqual([
-      { id: "model", value: "anthropic/claude-sonnet-4-6" },
-      { id: "thought_level", value: "high" },
-    ]);
-  });
+      expect(calls).toEqual([
+        { id: "model", value: "anthropic/claude-sonnet-4-6" },
+        { id: "thought_level", value: "high" },
+      ]);
+    }),
+  );
 
-  it("leaves Pi's active model unchanged for the default placeholder", async () => {
-    const calls: string[] = [];
-    await Effect.runPromise(
-      applyPiAcpModelSelection({
+  it.effect("leaves Pi's active model unchanged for the default placeholder", () =>
+    Effect.gen(function* () {
+      const calls: string[] = [];
+      yield* applyPiAcpModelSelection({
         runtime: {
           setModel: (value) => Effect.sync(() => calls.push(value)),
           setConfigOption: () => Effect.succeed({ configOptions: [] }),
@@ -65,8 +66,8 @@ describe("applyPiAcpModelSelection", () => {
         model: "default",
         selections: [],
         mapError: ({ cause }) => cause,
-      }),
-    );
-    expect(calls).toEqual([]);
-  });
+      });
+      expect(calls).toEqual([]);
+    }),
+  );
 });

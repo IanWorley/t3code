@@ -21,7 +21,12 @@
  *
  * @module provider/Drivers/CodexDriver
  */
-import { CodexSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
+import {
+  CodexSettings,
+  ProviderDriverKind,
+  type ServerProvider,
+  VIBEPROXY_CLIENT_API_KEY_ENV,
+} from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -57,7 +62,7 @@ import {
 import {
   applyVibeProxyStatus,
   checkingVibeProxyStatus,
-  discoverVibeProxyEndpoint,
+  parseVibeProxyUrl,
   probeVibeProxy,
   resolveVibeProxyClientKey,
   withVibeProxyCodexLaunchArgs,
@@ -131,15 +136,28 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       const serverSettings = yield* ServerSettingsService;
       const eventLoggers = yield* ProviderEventLoggers;
       const modelManifest = yield* ModelManifest.ModelManifest;
-      const clientKey = resolveVibeProxyClientKey(environment);
+      const globalSettings = yield* serverSettings.getSettings.pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProviderDriverError({
+              driver: DRIVER_KIND,
+              instanceId,
+              detail: "Failed to read the global VibeProxy settings.",
+              cause,
+            }),
+        ),
+      );
+      const clientKey =
+        globalSettings.vibeProxy.apiKey.value.trim() || resolveVibeProxyClientKey(environment);
       const offerVibeProxyModels = vibeProxy?.offerModels ?? true;
-      const vibeProxyEndpoint = vibeProxy?.enabled ? yield* discoverVibeProxyEndpoint() : null;
+      const vibeProxyEndpoint = vibeProxy?.enabled
+        ? parseVibeProxyUrl(globalSettings.vibeProxy.url)
+        : null;
       if (vibeProxy?.enabled && vibeProxyEndpoint === null) {
         return yield* new ProviderDriverError({
           driver: DRIVER_KIND,
           instanceId,
-          detail:
-            "VibeProxy routing is enabled, but no valid loopback VibeProxy configuration was found.",
+          detail: "VibeProxy routing is enabled, but the global VibeProxy URL is invalid.",
         });
       }
       const resolvedLaunch = consumeCodexLaunchArgsEnvironment(
@@ -147,6 +165,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         mergeProviderInstanceEnvironment(environment),
       );
       const processEnv = resolvedLaunch.environment;
+      if (clientKey) processEnv[VIBEPROXY_CLIENT_API_KEY_ENV] = clientKey;
       const homeLayout = yield* resolveCodexHomeLayout(config);
       const continuationIdentity = codexContinuationIdentity(homeLayout);
       const stampIdentity = withInstanceIdentity({
