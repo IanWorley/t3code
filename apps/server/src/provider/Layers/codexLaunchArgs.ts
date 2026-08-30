@@ -7,7 +7,21 @@ export const resolveCodexLaunchArgs = (
   environment: NodeJS.ProcessEnv = process.env,
 ) => environment[T3CODE_CODEX_LAUNCH_ARGS_ENV]?.trim() || launchArgs?.trim() || "";
 
-const codexLaunchArgv = (launchArgs?: string): ReadonlyArray<string> => tokenizeCliArgs(launchArgs);
+export const consumeCodexLaunchArgsEnvironment = (
+  launchArgs: string | undefined,
+  environment: NodeJS.ProcessEnv,
+) => {
+  const resolvedEnvironment = { ...environment };
+  delete resolvedEnvironment[T3CODE_CODEX_LAUNCH_ARGS_ENV];
+
+  return {
+    launchArgs: resolveCodexLaunchArgs(launchArgs, environment),
+    environment: resolvedEnvironment,
+  };
+};
+
+export const codexLaunchArgv = (launchArgs?: string): ReadonlyArray<string> =>
+  tokenizeCliArgs(launchArgs);
 
 export const codexAppServerArgs = (launchArgs?: string) => [
   "app-server",

@@ -13,6 +13,21 @@ const VIBEPROXY_HEALTH_PATH = "/healthz";
 const VIBEPROXY_MODELS_PATH = "/v1/models";
 const VIBEPROXY_PROBE_TIMEOUT_MS = 2_000;
 const VIBEPROXY_PROVIDER_ID = "t3_vibeproxy";
+const CLAUDE_ALTERNATE_PROVIDER_ENVIRONMENT_VARIABLES = [
+  "ANTHROPIC_AWS_BASE_URL",
+  "ANTHROPIC_BEDROCK_BASE_URL",
+  "ANTHROPIC_BEDROCK_MANTLE_BASE_URL",
+  "ANTHROPIC_FOUNDRY_BASE_URL",
+  "ANTHROPIC_GOOGLE_CLOUD_BASE_URL",
+  "ANTHROPIC_VERTEX_BASE_URL",
+  "CLAUDE_CODE_USE_ANTHROPIC_AWS",
+  "CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_FOUNDRY",
+  "CLAUDE_CODE_USE_GATEWAY",
+  "CLAUDE_CODE_USE_MANTLE",
+  "CLAUDE_CODE_USE_VERTEX",
+] as const;
 
 const VibeProxyModelsResponse = Schema.Struct({
   data: Schema.Array(
@@ -212,6 +227,9 @@ export function withVibeProxyClaudeEnvironment(
   const routed = { ...environment };
   delete routed.ANTHROPIC_API_KEY;
   delete routed.ANTHROPIC_AUTH_TOKEN;
+  for (const variable of CLAUDE_ALTERNATE_PROVIDER_ENVIRONMENT_VARIABLES) {
+    delete routed[variable];
+  }
   routed.ANTHROPIC_BASE_URL = endpoint.rootUrl;
   if (clientKey) routed.ANTHROPIC_AUTH_TOKEN = clientKey;
   return routed;
