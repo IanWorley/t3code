@@ -27,6 +27,7 @@ import {
 import { cn } from "../../lib/utils";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { normalizeProviderAccentColor } from "../../providerInstances";
+import { isVibeProxySupportedDriver } from "../../vibeProxyPresentation";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
@@ -44,7 +45,6 @@ import { ProviderModelsSection } from "./ProviderModelsSection";
 import { ProviderInstanceIcon, providerInstanceInitials } from "../chat/ProviderInstanceIcon";
 import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
-import { isVibeProxySupportedDriver } from "../../vibeProxyPresentation";
 import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
@@ -319,7 +319,9 @@ function ProviderEnvironmentSection(props: {
                             sensitive,
                             ...(sensitive && variable.valueRedacted === undefined
                               ? {}
-                              : { valueRedacted: sensitive ? variable.valueRedacted : false }),
+                              : {
+                                  valueRedacted: sensitive ? variable.valueRedacted : false,
+                                }),
                           });
                         }}
                         aria-label={`Mark environment variable ${variable.name || index + 1} as sensitive`}
@@ -483,7 +485,6 @@ export function ProviderInstanceCard({
     : null;
   const supportsVibeProxy = driverKind !== null && isVibeProxySupportedDriver(driverKind);
   const vibeProxyEnabled = instance.vibeProxy?.enabled ?? false;
-  const vibeProxyModelsOffered = instance.vibeProxy?.offerModels ?? true;
   const providerEnvironment = instance.environment ?? [];
   const vibeProxyKey = providerEnvironment.find(
     (variable) => variable.name === VIBEPROXY_CLIENT_API_KEY_ENV,
@@ -555,44 +556,6 @@ export function ProviderInstanceCard({
     environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>,
   ) => {
     updateEnvironment(vibeProxyKey ? [...environment, vibeProxyKey] : environment);
-  };
-
-  const updateVibeProxyEnabled = (value: boolean) => {
-    onUpdate({
-      ...instance,
-      vibeProxy: { enabled: value, offerModels: vibeProxyModelsOffered },
-    });
-  };
-
-  const updateVibeProxyModelsOffered = (value: boolean) => {
-    onUpdate({
-      ...instance,
-      vibeProxy: { enabled: vibeProxyEnabled, offerModels: value },
-    });
-  };
-
-  const updateVibeProxyKey = (value: string) => {
-    const trimmed = value.trim();
-    if (trimmed.length === 0) return;
-    const nextKey: ProviderInstanceEnvironmentVariable = {
-      name: VIBEPROXY_CLIENT_API_KEY_ENV,
-      value: trimmed,
-      sensitive: true,
-    };
-    const nextEnvironment = providerEnvironment.some(
-      (variable) => variable.name === VIBEPROXY_CLIENT_API_KEY_ENV,
-    )
-      ? providerEnvironment.map((variable) =>
-          variable.name === VIBEPROXY_CLIENT_API_KEY_ENV ? nextKey : variable,
-        )
-      : [...providerEnvironment, nextKey];
-    updateEnvironment(nextEnvironment);
-  };
-
-  const clearVibeProxyKey = () => {
-    updateEnvironment(
-      providerEnvironment.filter((variable) => variable.name !== VIBEPROXY_CLIENT_API_KEY_ENV),
-    );
   };
 
   const titleIconNode = driverKind ? (
@@ -946,90 +909,6 @@ export function ProviderInstanceCard({
                 description="Used to distinguish this instance in picker rails and model lists."
               />
             </div>
-
-            {supportsVibeProxy ? (
-              <div className="space-y-3 rounded-lg border border-border/70 bg-muted/20 p-3">
-                <div className="flex items-center gap-2">
-                  <Badge variant="info" size="sm">
-                    VibeProxy
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">Local model gateway</span>
-                </div>
-
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-xs font-medium text-foreground">
-                      Enable VibeProxy routing
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Routes this instance through the VibeProxy server running on the T3 host.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={vibeProxyEnabled}
-                    onCheckedChange={(checked) => updateVibeProxyEnabled(Boolean(checked))}
-                    aria-label="Enable VibeProxy routing"
-                  />
-                </div>
-
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-xs font-medium text-foreground">
-                      Offer VibeProxy models
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Adds proxy-only models to this instance's model picker. Turn this off to keep
-                      the normal model list while still routing through VibeProxy.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={vibeProxyModelsOffered}
-                    onCheckedChange={(checked) => updateVibeProxyModelsOffered(Boolean(checked))}
-                    aria-label="Offer VibeProxy models"
-                  />
-                </div>
-
-                <label htmlFor={`provider-instance-${instanceId}-vibeproxy-key`} className="block">
-                  <span className="text-xs font-medium text-foreground">
-                    VibeProxy client API key
-                  </span>
-                  <div className="mt-1.5 flex gap-2">
-                    <DraftInput
-                      id={`provider-instance-${instanceId}-vibeproxy-key`}
-                      type="password"
-                      className="min-w-0 flex-1"
-                      value={vibeProxyKey?.valueRedacted ? "" : (vibeProxyKey?.value ?? "")}
-                      onCommit={updateVibeProxyKey}
-                      placeholder={
-                        vibeProxyKey?.valueRedacted
-                          ? "Saved — enter a new key to replace"
-                          : "Optional"
-                      }
-                      autoComplete="off"
-                      spellCheck={false}
-                    />
-                    {vibeProxyKey ? (
-                      <Button type="button" variant="outline" size="sm" onClick={clearVibeProxyKey}>
-                        Clear
-                      </Button>
-                    ) : null}
-                  </div>
-                </label>
-
-                {vibeProxyEnabled ? (
-                  <p
-                    className={cn(
-                      "text-xs",
-                      liveProvider?.vibeProxy?.reachable ? "text-muted-foreground" : "text-warning",
-                    )}
-                  >
-                    {liveProvider?.vibeProxy
-                      ? `${liveProvider.vibeProxy.endpoint} · ${liveProvider.vibeProxy.reachable ? `${liveProvider.vibeProxy.models.length} models detected${vibeProxyModelsOffered ? "" : " · not added to picker"}` : (liveProvider.vibeProxy.message ?? "Unavailable")}`
-                      : "Waiting for VibeProxy status…"}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
 
             <div>
               <ProviderEnvironmentSection

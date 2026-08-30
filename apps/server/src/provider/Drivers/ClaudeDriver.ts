@@ -58,7 +58,7 @@ import {
 import {
   applyVibeProxyStatus,
   checkingVibeProxyStatus,
-  discoverVibeProxyEndpoint,
+  parseVibeProxyUrl,
   probeVibeProxy,
   resolveVibeProxyClientKey,
   withVibeProxyClaudeEnvironment,
@@ -136,15 +136,28 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       const serverSettings = yield* ServerSettingsService;
       const eventLoggers = yield* ProviderEventLoggers;
       const modelManifest = yield* ModelManifest.ModelManifest;
-      const clientKey = resolveVibeProxyClientKey(environment);
+      const globalSettings = yield* serverSettings.getSettings.pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProviderDriverError({
+              driver: DRIVER_KIND,
+              instanceId,
+              detail: "Failed to read the global VibeProxy settings.",
+              cause,
+            }),
+        ),
+      );
+      const clientKey =
+        globalSettings.vibeProxy.apiKey.value.trim() || resolveVibeProxyClientKey(environment);
       const offerVibeProxyModels = vibeProxy?.offerModels ?? true;
-      const vibeProxyEndpoint = vibeProxy?.enabled ? yield* discoverVibeProxyEndpoint() : null;
+      const vibeProxyEndpoint = vibeProxy?.enabled
+        ? parseVibeProxyUrl(globalSettings.vibeProxy.url)
+        : null;
       if (vibeProxy?.enabled && vibeProxyEndpoint === null) {
         return yield* new ProviderDriverError({
           driver: DRIVER_KIND,
           instanceId,
-          detail:
-            "VibeProxy routing is enabled, but no valid loopback VibeProxy configuration was found.",
+          detail: "VibeProxy routing is enabled, but the global VibeProxy URL is invalid.",
         });
       }
       const instanceEnv = mergeProviderInstanceEnvironment(environment);

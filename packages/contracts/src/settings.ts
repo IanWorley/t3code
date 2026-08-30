@@ -682,6 +682,20 @@ export const BackgroundActivitySettings = Schema.Struct({
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
+export const DEFAULT_VIBEPROXY_URL = "http://localhost:8317";
+
+export const VibeProxyApiKeySetting = Schema.Struct({
+  value: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  valueRedacted: Schema.optionalKey(Schema.Boolean),
+}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type VibeProxyApiKeySetting = typeof VibeProxyApiKeySetting.Type;
+
+export const VibeProxySettings = Schema.Struct({
+  url: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_VIBEPROXY_URL))),
+  apiKey: VibeProxyApiKeySetting,
+}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type VibeProxySettings = typeof VibeProxySettings.Type;
+
 export const ServerSettings = Schema.Struct({
   // Legacy token-by-token assistant output. Deliberately a fresh key (was
   // `enableAssistantStreaming`): decoding drops the old key, so everyone,
@@ -736,6 +750,7 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
   addProjectBaseDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  vibeProxy: VibeProxySettings,
   textGenerationModelSelection: ModelSelection.pipe(
     Schema.withDecodingDefault(
       Effect.succeed({
@@ -955,6 +970,17 @@ export const ServerSettingsPatch = Schema.Struct({
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
+  vibeProxy: Schema.optionalKey(
+    Schema.Struct({
+      url: Schema.optionalKey(TrimmedString),
+      apiKey: Schema.optionalKey(
+        Schema.Struct({
+          value: Schema.optionalKey(Schema.String),
+          valueRedacted: Schema.optionalKey(Schema.Boolean),
+        }),
+      ),
+    }),
+  ),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   sourceControlWritingStyle: Schema.optionalKey(
     Schema.Struct({

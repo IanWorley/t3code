@@ -7,6 +7,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   defaultInstanceIdForDriver,
+  DEFAULT_VIBEPROXY_URL,
   type EnvironmentId,
   PROVIDER_DISPLAY_NAMES,
   ProviderDriverKind,
@@ -41,6 +42,7 @@ import { usePrimarySessionState } from "../../environments/primary";
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { resolveAppModelSelectionState } from "../../modelSelection";
+import { isVibeProxySupportedDriver } from "../../vibeProxyPresentation";
 import {
   useEnvironments,
   usePrimaryEnvironmentId,
@@ -63,6 +65,7 @@ import {
   type ProviderUpdateCandidate,
 } from "../ProviderUpdateLaunchNotification.logic";
 import { Button } from "../ui/button";
+import { DraftInput } from "../ui/draft-input";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible";
 import {
   NumberField,
@@ -72,6 +75,7 @@ import {
   NumberFieldInput,
 } from "../ui/number-field";
 import { ScrollArea } from "../ui/scroll-area";
+import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
@@ -648,6 +652,38 @@ export function EnvironmentProviderSettings({
     );
   };
 
+  const vibeProxyRows = rows.filter((row) => isVibeProxySupportedDriver(row.driver));
+
+  const updateVibeProxyRouting = (row: InstanceRow, enabled: boolean) => {
+    updateProviderInstance(row, {
+      ...row.instance,
+      vibeProxy: {
+        enabled,
+        offerModels: row.instance.vibeProxy?.offerModels ?? true,
+      },
+    });
+  };
+
+  const updateVibeProxyUrl = (value: string) => {
+    updateSettings({
+      vibeProxy: { url: value.trim() || DEFAULT_VIBEPROXY_URL },
+    });
+  };
+
+  const updateVibeProxyApiKey = (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) return;
+    updateSettings({
+      vibeProxy: { apiKey: { value: trimmed, valueRedacted: false } },
+    });
+  };
+
+  const clearVibeProxyApiKey = () => {
+    updateSettings({
+      vibeProxy: { apiKey: { value: "", valueRedacted: false } },
+    });
+  };
+
   const deleteProviderInstance = (id: ProviderInstanceId) => {
     updateSettings({
       providerInstances: withoutProviderInstanceKey(settings.providerInstances, id),
@@ -878,6 +914,114 @@ export function EnvironmentProviderSettings({
             description={`This session can view ${environmentLabel}'s providers, but its credential does not allow changing their configuration.`}
           />
         ) : null}
+        <div
+          inert={readOnly}
+          aria-disabled={readOnly || undefined}
+          className={cn(
+            "mx-3 rounded-lg border border-border/70 bg-muted/20 p-3 sm:mx-4",
+            readOnly && "opacity-50 select-none",
+          )}
+        >
+          <div className="mb-3">
+            <h3 className="text-sm font-medium text-foreground">VibeProxy</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Configure one proxy for this environment, then choose which supported provider
+              instances use it.
+            </p>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-medium text-foreground">Proxy URL</span>
+              <DraftInput
+                className="mt-1.5 w-full"
+                value={settings.vibeProxy.url}
+                onCommit={updateVibeProxyUrl}
+                placeholder={DEFAULT_VIBEPROXY_URL}
+                aria-label="VibeProxy URL"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-xs font-medium text-foreground">Client API key</span>
+              <div className="mt-1.5 flex gap-2">
+                <DraftInput
+                  type="password"
+                  className="min-w-0 flex-1"
+                  value={
+                    settings.vibeProxy.apiKey.valueRedacted ? "" : settings.vibeProxy.apiKey.value
+                  }
+                  onCommit={updateVibeProxyApiKey}
+                  placeholder={
+                    settings.vibeProxy.apiKey.valueRedacted
+                      ? "Saved — enter a new key to replace"
+                      : "Optional"
+                  }
+                  aria-label="VibeProxy client API key"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                {settings.vibeProxy.apiKey.valueRedacted ||
+                settings.vibeProxy.apiKey.value.length > 0 ? (
+                  <Button type="button" variant="outline" size="sm" onClick={clearVibeProxyApiKey}>
+                    Clear
+                  </Button>
+                ) : null}
+              </div>
+            </label>
+          </div>
+
+          <div className="mt-4 border-t border-border/70 pt-3">
+            <div className="mb-2 text-xs font-medium text-foreground">Use VibeProxy with</div>
+            <div className="grid gap-2 lg:grid-cols-2">
+              {vibeProxyRows.map((row) => {
+                const liveProvider = serverProviders.find(
+                  (candidate) => candidate.instanceId === row.instanceId,
+                );
+                const displayName =
+                  row.instance.displayName?.trim() ||
+                  getDriverOption(row.driver)?.label ||
+                  String(row.instanceId);
+                const enabled = row.instance.vibeProxy?.enabled ?? false;
+                return (
+                  <div
+                    key={row.instanceId}
+                    className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-background/50 px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-medium text-foreground">
+                        {displayName}
+                      </div>
+                      <div
+                        className={cn(
+                          "truncate text-[11px]",
+                          enabled && liveProvider?.vibeProxy && !liveProvider.vibeProxy.reachable
+                            ? "text-warning"
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        {!enabled
+                          ? "Direct connection"
+                          : liveProvider?.vibeProxy
+                            ? liveProvider.vibeProxy.reachable
+                              ? `${liveProvider.vibeProxy.models.length} models detected`
+                              : (liveProvider.vibeProxy.message ?? "Unavailable")
+                            : "Waiting for VibeProxy status…"}
+                      </div>
+                    </div>
+                    <Switch
+                      checked={enabled}
+                      onCheckedChange={(checked) => updateVibeProxyRouting(row, Boolean(checked))}
+                      aria-label={`Use VibeProxy with ${displayName}`}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
         <div className="space-y-1">
           <div className="mx-3 overflow-hidden rounded-lg border border-border/70 sm:mx-4 lg:grid lg:h-[min(38rem,calc(100dvh-16rem))] lg:min-h-[30rem] lg:grid-cols-[20rem_minmax(0,1fr)]">
             <div className="border-b border-border/70 lg:flex lg:min-h-0 lg:flex-col lg:border-r lg:border-b-0">
