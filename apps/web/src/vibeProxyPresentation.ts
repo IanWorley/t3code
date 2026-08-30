@@ -19,6 +19,12 @@ export function getVibeProxyModelAdvisory(
   return status.models.includes(model) ? null : VIBEPROXY_UNAVAILABLE_MODEL_MESSAGE;
 }
 
+export function getVibeProxyModelSourceLabel(
+  entry: ProviderInstanceEntry | undefined,
+): string | null {
+  return entry?.snapshot.vibeProxy?.enabled ? "VibeProxy" : null;
+}
+
 export function describeVibeProxyInstance(entry: ProviderInstanceEntry): string | null {
   const status = entry.snapshot.vibeProxy;
   if (!status?.enabled) return null;

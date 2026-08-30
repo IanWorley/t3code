@@ -39,6 +39,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
   jumpLabel?: string | null;
   disabledReason?: string | null;
   advisoryReason?: string | null;
+  sourceBadgeLabel?: string | null;
   onToggleFavorite: () => void;
 }) {
   const ProviderIcon = PROVIDER_ICON_BY_PROVIDER[props.driverKind] ?? null;
@@ -78,6 +79,11 @@ export const ModelListRow = memo(function ModelListRow(props: {
             >
               New
             </span>
+          ) : null}
+          {props.sourceBadgeLabel ? (
+            <Badge variant="info" size="sm" aria-label={`Model source: ${props.sourceBadgeLabel}`}>
+              {props.sourceBadgeLabel}
+            </Badge>
           ) : null}
           {props.unavailable ? (
             <Badge variant="outline" size="sm">

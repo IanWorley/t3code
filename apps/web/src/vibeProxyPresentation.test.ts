@@ -2,7 +2,11 @@ import { describe, expect, it } from "vite-plus/test";
 import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 
 import { deriveProviderInstanceEntries } from "./providerInstances";
-import { describeVibeProxyInstance, getVibeProxyModelAdvisory } from "./vibeProxyPresentation";
+import {
+  describeVibeProxyInstance,
+  getVibeProxyModelAdvisory,
+  getVibeProxyModelSourceLabel,
+} from "./vibeProxyPresentation";
 
 const provider = (reachable: boolean): ServerProvider => ({
   instanceId: ProviderInstanceId.make("codex_proxy"),
@@ -28,6 +32,7 @@ const provider = (reachable: boolean): ServerProvider => ({
 describe("VibeProxy picker presentation", () => {
   it("marks only models absent from the reachable proxy", () => {
     const entry = deriveProviderInstanceEntries([provider(true)])[0];
+    expect(getVibeProxyModelSourceLabel(entry)).toBe("VibeProxy");
     expect(getVibeProxyModelAdvisory(entry, "gpt-available")).toBeNull();
     expect(getVibeProxyModelAdvisory(entry, "gpt-missing")).toBe(
       "Not currently available through VibeProxy",
@@ -42,5 +47,11 @@ describe("VibeProxy picker presentation", () => {
       "Codex Proxy — VibeProxy is not running; requests will fail.",
     );
     expect(getVibeProxyModelAdvisory(unreachable, "gpt-missing")).toBeNull();
+  });
+
+  it("does not label models from a direct provider instance", () => {
+    const { vibeProxy: _omit, ...direct } = provider(true);
+    const entry = deriveProviderInstanceEntries([direct])[0];
+    expect(getVibeProxyModelSourceLabel(entry)).toBeNull();
   });
 });

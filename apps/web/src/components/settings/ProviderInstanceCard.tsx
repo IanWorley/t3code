@@ -949,6 +949,13 @@ export function ProviderInstanceCard({
 
             {supportsVibeProxy ? (
               <div className="space-y-3 rounded-lg border border-border/70 bg-muted/20 p-3">
+                <div className="flex items-center gap-2">
+                  <Badge variant="info" size="sm">
+                    VibeProxy
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">Local model gateway</span>
+                </div>
+
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-xs font-medium text-foreground">

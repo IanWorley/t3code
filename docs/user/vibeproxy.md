@@ -25,10 +25,11 @@ thread before the routing change takes effect.
 
 ## Choose a model
 
-Routed instances show a **VP** marker in the model picker. When **Offer VibeProxy models** is on,
-models currently reported by VibeProxy are added to that instance's model list. A dimmed model is
-not currently present in VibeProxy's live model list, but it remains selectable because account
-quota and model availability can change.
+Routed instances show a **VP** marker in the model picker, and every model row from that instance
+shows a **VibeProxy** source badge. When **Offer VibeProxy models** is on, models currently reported
+by VibeProxy are added to that instance's model list. A dimmed model is not currently present in
+VibeProxy's live model list, but it remains selectable because account quota and model availability
+can change.
 
 Turn **Offer VibeProxy models** off when you want routing without adding proxy-only choices. Models
 already in T3 Code's normal catalog remain available. You can also hide individual models from the

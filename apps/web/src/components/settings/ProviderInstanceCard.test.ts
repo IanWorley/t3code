@@ -121,6 +121,7 @@ describe("deriveProviderModelsForDisplay", () => {
 
     expect(markup).toContain('aria-label="Enable VibeProxy routing"');
     expect(markup).toContain('aria-label="Offer VibeProxy models"');
+    expect(markup).toContain("Local model gateway");
     expect(markup).toContain("2 models detected · not added to picker");
   });
 
