@@ -26,6 +26,7 @@ import type {
   ProviderDriverKind,
   ProviderInstanceEnvironment,
   ProviderInstanceId,
+  ProviderInstanceVibeProxyConfig,
   ServerProvider,
 } from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
@@ -114,6 +115,7 @@ export interface ProviderDriverCreateInput<Config> {
   readonly displayName: string | undefined;
   readonly accentColor?: string | undefined;
   readonly environment: ProviderInstanceEnvironment;
+  readonly vibeProxy?: ProviderInstanceVibeProxyConfig | undefined;
   readonly enabled: boolean;
   readonly config: Config;
 }

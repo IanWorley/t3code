@@ -67,6 +67,14 @@ import {
   type ProviderSnapshotSettings,
 } from "../providerUpdateSettings.ts";
 import {
+  applyVibeProxyStatus,
+  checkingVibeProxyStatus,
+  discoverVibeProxyEndpoint,
+  probeVibeProxy,
+  resolveVibeProxyClientKey,
+  withVibeProxyCodexLaunchArgs,
+} from "../vibeProxy.ts";
+import {
   codexContinuationIdentity,
   materializeCodexShadowHome,
   resolveCodexHomeLayout,
@@ -124,7 +132,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
   },
   configSchema: CodexSettings,
   defaultConfig: (): CodexSettings => decodeCodexSettings({}),
-  create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
+  create: ({ instanceId, displayName, accentColor, environment, vibeProxy, enabled, config }) =>
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const resetCreditCoordinator = yield* CodexResetCreditCoordinator;
@@ -134,6 +142,17 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       const serverSettings = yield* ServerSettingsService;
       const eventLoggers = yield* ProviderEventLoggers;
       const modelManifest = yield* ModelManifest.ModelManifest;
+      const clientKey = resolveVibeProxyClientKey(environment);
+      const offerVibeProxyModels = vibeProxy?.offerModels ?? true;
+      const vibeProxyEndpoint = vibeProxy?.enabled ? yield* discoverVibeProxyEndpoint() : null;
+      if (vibeProxy?.enabled && vibeProxyEndpoint === null) {
+        return yield* new ProviderDriverError({
+          driver: DRIVER_KIND,
+          instanceId,
+          detail:
+            "VibeProxy routing is enabled, but no valid loopback VibeProxy configuration was found.",
+        });
+      }
       const processEnv = mergeProviderInstanceEnvironment(environment);
       const homeLayout = yield* resolveCodexHomeLayout(config);
       const continuationIdentity = codexContinuationIdentity(homeLayout);
@@ -160,6 +179,15 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         enabled,
         binaryPath: expandHomePath(config.binaryPath),
         homePath: homeLayout.effectiveHomePath ?? "",
+        ...(vibeProxyEndpoint
+          ? {
+              launchArgs: withVibeProxyCodexLaunchArgs(
+                config.launchArgs,
+                vibeProxyEndpoint,
+                clientKey !== undefined,
+              ),
+            }
+          : {}),
       } satisfies CodexSettings;
       const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
         resolveProviderMaintenanceCapabilitiesEffect(
@@ -194,7 +222,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       // Kick the TTL-gated manifest refresh in the background and classify
       // with the in-memory manifest, so a slow or hung fetch never delays the
       // provider check. A refresh that lands mid-probe applies on the next one.
-      const checkProvider = modelManifest.refreshInBackground.pipe(
+      const baseCheckProvider = modelManifest.refreshInBackground.pipe(
         Effect.andThen(
           Effect.zipWith(
             checkCodexProviderStatus(effectiveConfig, undefined, processEnv),
@@ -206,19 +234,41 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         ),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       );
+      const checkProvider = vibeProxyEndpoint
+        ? Effect.zipWith(
+            baseCheckProvider,
+            probeVibeProxy(vibeProxyEndpoint, clientKey).pipe(
+              Effect.provideService(HttpClient.HttpClient, httpClient),
+            ),
+            (provider, status) => applyVibeProxyStatus(provider, status, offerVibeProxyModels),
+            { concurrent: true },
+          )
+        : baseCheckProvider;
       const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<CodexSettings>>({
         resolveMaintenance,
         getSettings: snapshotSettings.getSettings,
         streamSettings: snapshotSettings.streamSettings,
         haveSettingsChanged: haveProviderSnapshotSettingsChanged,
-        initialSnapshot: (settings) =>
-          Effect.zipWith(
+        initialSnapshot: (settings) => {
+          const pending = Effect.zipWith(
             makePendingCodexProvider(settings.provider),
             modelManifest.current,
             (draft, manifest) =>
               stampIdentity(ModelManifest.applyModelManifest(draft, manifest, DRIVER_KIND)),
-          ),
+          );
+          return vibeProxyEndpoint
+            ? pending.pipe(
+                Effect.map((provider) =>
+                  applyVibeProxyStatus(
+                    provider,
+                    checkingVibeProxyStatus(vibeProxyEndpoint),
+                    offerVibeProxyModels,
+                  ),
+                ),
+              )
+            : pending;
+        },
         checkProvider,
         enrichSnapshot: ({ settings, snapshot, publishSnapshot }) =>
           resolveMaintenance().pipe(

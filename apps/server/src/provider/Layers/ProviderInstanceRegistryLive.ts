@@ -179,6 +179,7 @@ const buildEntry = <R>(input: {
         displayName: entry.displayName,
         accentColor: entry.accentColor,
         environment: entry.environment ?? [],
+        vibeProxy: entry.vibeProxy,
         enabled: resolveEntryEnabled(entry, typedConfig),
         config: typedConfig,
       })

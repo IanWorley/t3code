@@ -18,6 +18,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   isProviderDriverKind,
   resolveProviderInstanceEnabled,
+  VIBEPROXY_CLIENT_API_KEY_ENV,
   type ProviderInstanceConfig,
   type ProviderInstanceEnvironmentVariable,
   type ProviderInstanceId,
@@ -34,6 +35,7 @@ import {
 import { cn } from "../../lib/utils";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { normalizeProviderAccentColor } from "../../providerInstances";
+import { isVibeProxySupportedDriver } from "../../vibeProxyPresentation";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
@@ -138,6 +140,7 @@ function nextConfigBlobWithValue(
 export function deriveProviderModelsForDisplay(input: {
   readonly liveModels: ReadonlyArray<ServerProviderModel> | undefined;
   readonly customModels: ReadonlyArray<CustomModelDefinition>;
+  readonly proxyModels?: ReadonlyArray<string>;
 }): ReadonlyArray<ServerProviderModel> {
   const liveCustomModelsBySlug = new Map(
     Arr.filterMap(input.liveModels ?? [], (model) =>
@@ -152,6 +155,18 @@ export function deriveProviderModelsForDisplay(input: {
     capabilities:
       entry.capabilities ?? liveCustomModelsBySlug.get(entry.slug)?.capabilities ?? null,
   }));
+  const configuredSlugs = new Set(input.customModels.map((entry) => entry.slug));
+  for (const slug of new Set(input.proxyModels ?? [])) {
+    if (configuredSlugs.has(slug)) continue;
+    customModels.push(
+      liveCustomModelsBySlug.get(slug) ?? {
+        slug,
+        name: slug,
+        isCustom: true,
+        capabilities: null,
+      },
+    );
+  }
   return [...serverModels, ...customModels];
 }
 
@@ -473,6 +488,15 @@ export function ProviderInstanceCard({
   const driverKind: ProviderDriverKind | null = isProviderDriverKind(instance.driver)
     ? instance.driver
     : null;
+  const supportsVibeProxy = driverKind !== null && isVibeProxySupportedDriver(driverKind);
+  const vibeProxyEnabled = instance.vibeProxy?.enabled ?? false;
+  const providerEnvironment = instance.environment ?? [];
+  const vibeProxyKey = providerEnvironment.find(
+    (variable) => variable.name === VIBEPROXY_CLIENT_API_KEY_ENV,
+  );
+  const visibleEnvironment = providerEnvironment.filter(
+    (variable) => variable.name !== VIBEPROXY_CLIENT_API_KEY_ENV,
+  );
   const customModels =
     instance.driver === "antigravity" ? [] : readConfigCustomModels(instance.config);
   // Server-returned models may lag behind settings writes. Treat probe
@@ -481,6 +505,9 @@ export function ProviderInstanceCard({
   const modelsForDisplay = deriveProviderModelsForDisplay({
     liveModels: liveProvider?.models,
     customModels,
+    ...(liveProvider?.vibeProxy?.addedModels
+      ? { proxyModels: liveProvider.vibeProxy.addedModels }
+      : {}),
   });
   const updateDisplayName = (value: string) => {
     const trimmed = value.trim();
@@ -533,6 +560,12 @@ export function ProviderInstanceCard({
         ? ({ ...rest, environment: cleaned } as ProviderInstanceConfig)
         : (rest as ProviderInstanceConfig),
     );
+  };
+
+  const updateVisibleEnvironment = (
+    environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>,
+  ) => {
+    updateEnvironment(vibeProxyKey ? [...environment, vibeProxyKey] : environment);
   };
 
   const titleIconNode = driverKind ? (
@@ -687,6 +720,15 @@ export function ProviderInstanceCard({
       {driverOption?.badgeLabel ? (
         <Badge variant="warning" size="sm" className="shrink-0">
           {driverOption.badgeLabel}
+        </Badge>
+      ) : null}
+      {supportsVibeProxy && vibeProxyEnabled ? (
+        <Badge
+          variant={liveProvider?.vibeProxy?.reachable ? "default" : "warning"}
+          size="sm"
+          className="shrink-0"
+        >
+          via VibeProxy
         </Badge>
       ) : null}
       {versionCodeNode}
@@ -879,8 +921,8 @@ export function ProviderInstanceCard({
         className={readOnly ? "opacity-50 select-none" : undefined}
       >
         <ProviderEnvironmentSection
-          environment={instance.environment ?? []}
-          onChange={updateEnvironment}
+          environment={visibleEnvironment}
+          onChange={updateVisibleEnvironment}
         />
       </SettingsSection>
 

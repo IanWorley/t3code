@@ -59,6 +59,14 @@ import {
   makeProviderSnapshotSettingsSource,
   type ProviderSnapshotSettings,
 } from "../providerUpdateSettings.ts";
+import {
+  applyVibeProxyStatus,
+  checkingVibeProxyStatus,
+  parseVibeProxyUrl,
+  probeVibeProxy,
+  resolveVibeProxyClientKey,
+  withVibeProxyClaudeEnvironment,
+} from "../vibeProxy.ts";
 import { makeClaudeCapabilitiesCacheKey, makeClaudeContinuationGroupKey } from "./ClaudeHome.ts";
 import { discoverClaudeSkills } from "./ClaudeSkills.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
@@ -104,7 +112,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
   },
   configSchema: ClaudeSettings,
   defaultConfig: (): ClaudeSettings => decodeClaudeSettings({}),
-  create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
+  create: ({ instanceId, displayName, accentColor, environment, vibeProxy, enabled, config }) =>
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const fileSystem = yield* FileSystem.FileSystem;
@@ -114,8 +122,39 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       const serverSettings = yield* ServerSettingsService;
       const eventLoggers = yield* ProviderEventLoggers;
       const modelManifest = yield* ModelManifest.ModelManifest;
-      const modelCatalog = modelManifest.current.pipe(Effect.map(resolveClaudeModelCatalog));
-      const processEnv = mergeProviderInstanceEnvironment(environment);
+      const modelCatalog = modelManifest.current.pipe(
+        Effect.map((manifest) => ({
+          ...resolveClaudeModelCatalog(manifest),
+          vibeProxy: vibeProxy?.enabled === true,
+        })),
+      );
+      const globalSettings = yield* serverSettings.getSettings.pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProviderDriverError({
+              driver: DRIVER_KIND,
+              instanceId,
+              detail: "Failed to read the global VibeProxy settings.",
+              cause,
+            }),
+        ),
+      );
+      const clientKey =
+        globalSettings.vibeProxy.apiKey.value.trim() || resolveVibeProxyClientKey(environment);
+      const vibeProxyEndpoint = vibeProxy?.enabled
+        ? parseVibeProxyUrl(globalSettings.vibeProxy.url)
+        : null;
+      if (vibeProxy?.enabled && vibeProxyEndpoint === null) {
+        return yield* new ProviderDriverError({
+          driver: DRIVER_KIND,
+          instanceId,
+          detail: "VibeProxy routing is enabled, but the global VibeProxy URL is invalid.",
+        });
+      }
+      const instanceEnv = mergeProviderInstanceEnvironment(environment);
+      const processEnv = vibeProxyEndpoint
+        ? withVibeProxyClaudeEnvironment(instanceEnv, vibeProxyEndpoint, clientKey)
+        : instanceEnv;
       const fallbackContinuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
         instanceId,
@@ -175,7 +214,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
 
       // Start the TTL-gated refresh without delaying provider readiness. The
       // next check observes a remote manifest after the background fetch lands.
-      const checkProvider = modelManifest.refreshInBackground.pipe(
+      const baseCheckProvider = modelManifest.refreshInBackground.pipe(
         Effect.andThen(
           modelManifest.current.pipe(
             Effect.flatMap((manifest) =>
@@ -195,6 +234,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, path),
       );
+      const checkProvider = vibeProxyEndpoint
+        ? Effect.zipWith(
+            baseCheckProvider,
+            probeVibeProxy(vibeProxyEndpoint, clientKey).pipe(
+              Effect.provideService(HttpClient.HttpClient, httpClient),
+            ),
+            (provider, status) => applyVibeProxyStatus(provider, status),
+            { concurrent: true },
+          )
+        : baseCheckProvider;
 
       const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<ClaudeSettings>>({
@@ -202,13 +251,21 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         getSettings: snapshotSettings.getSettings,
         streamSettings: snapshotSettings.streamSettings,
         haveSettingsChanged: haveProviderSnapshotSettingsChanged,
-        initialSnapshot: (settings) =>
-          modelManifest.current.pipe(
+        initialSnapshot: (settings) => {
+          const pending = modelManifest.current.pipe(
             Effect.flatMap((manifest) =>
               makePendingClaudeProvider(settings.provider, resolveClaudeModelCatalog(manifest)),
             ),
             Effect.map(stampIdentity),
-          ),
+          );
+          return vibeProxyEndpoint
+            ? pending.pipe(
+                Effect.map((provider) =>
+                  applyVibeProxyStatus(provider, checkingVibeProxyStatus(vibeProxyEndpoint)),
+                ),
+              )
+            : pending;
+        },
         checkProvider,
         enrichSnapshot: ({ settings, snapshot, publishSnapshot }) =>
           resolveMaintenance().pipe(
