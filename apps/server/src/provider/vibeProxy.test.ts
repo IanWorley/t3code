@@ -11,7 +11,11 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
-import { codexLaunchArgv } from "./Layers/codexLaunchArgs.ts";
+import {
+  codexLaunchArgv,
+  consumeCodexLaunchArgsEnvironment,
+  resolveCodexLaunchArgs,
+} from "./Layers/codexLaunchArgs.ts";
 import {
   applyVibeProxyStatus,
   discoverVibeProxyEndpoint,
@@ -87,6 +91,30 @@ it.layer(NodeServices.layer)("VibeProxy discovery", (it) => {
 });
 
 describe("VibeProxy runtime routing", () => {
+  it("keeps generated Codex routing after consuming an environment launch override", () => {
+    const resolvedLaunch = consumeCodexLaunchArgsEnvironment("--enable settings-feature", {
+      T3CODE_CODEX_LAUNCH_ARGS: "--strict-config --enable env-feature",
+    });
+    const launchArgs = withVibeProxyCodexLaunchArgs(resolvedLaunch.launchArgs, ENDPOINT, false);
+
+    assert.deepStrictEqual(
+      codexLaunchArgv(resolveCodexLaunchArgs(launchArgs, resolvedLaunch.environment)),
+      [
+        "--strict-config",
+        "--enable",
+        "env-feature",
+        "-c",
+        'model_provider="t3_vibeproxy"',
+        "-c",
+        'model_providers.t3_vibeproxy.name="VibeProxy"',
+        "-c",
+        'model_providers.t3_vibeproxy.base_url="http://127.0.0.1:8318/v1"',
+        "-c",
+        'model_providers.t3_vibeproxy.wire_api="responses"',
+      ],
+    );
+  });
+
   it("appends typed Codex config overrides after user arguments", () => {
     const launchArgs = withVibeProxyCodexLaunchArgs("--enable foo", ENDPOINT, true);
     assert.deepStrictEqual(codexLaunchArgv(launchArgs), [

@@ -36,6 +36,7 @@ import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeCodexAdapter } from "../Layers/CodexAdapter.ts";
+import { consumeCodexLaunchArgsEnvironment } from "../Layers/codexLaunchArgs.ts";
 import { checkCodexProviderStatus, makePendingCodexProvider } from "../Layers/CodexProvider.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
@@ -141,7 +142,11 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
             "VibeProxy routing is enabled, but no valid loopback VibeProxy configuration was found.",
         });
       }
-      const processEnv = mergeProviderInstanceEnvironment(environment);
+      const resolvedLaunch = consumeCodexLaunchArgsEnvironment(
+        config.launchArgs,
+        mergeProviderInstanceEnvironment(environment),
+      );
+      const processEnv = resolvedLaunch.environment;
       const homeLayout = yield* resolveCodexHomeLayout(config);
       const continuationIdentity = codexContinuationIdentity(homeLayout);
       const stampIdentity = withInstanceIdentity({
@@ -168,12 +173,12 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         ...(vibeProxyEndpoint
           ? {
               launchArgs: withVibeProxyCodexLaunchArgs(
-                config.launchArgs,
+                resolvedLaunch.launchArgs,
                 vibeProxyEndpoint,
                 clientKey !== undefined,
               ),
             }
-          : {}),
+          : { launchArgs: resolvedLaunch.launchArgs }),
       } satisfies CodexSettings;
       const maintenanceCapabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
         binaryPath: effectiveConfig.binaryPath,
