@@ -9,7 +9,6 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 
-const VIBEPROXY_HEALTH_PATH = "/healthz";
 const VIBEPROXY_MODELS_PATH = "/v1/models";
 const VIBEPROXY_PROBE_TIMEOUT_MS = 2_000;
 const VIBEPROXY_PROVIDER_ID = "t3_vibeproxy";
@@ -81,22 +80,6 @@ export const probeVibeProxy = Effect.fn("probeVibeProxy")(function* (
   clientKey: string | undefined,
 ) {
   const httpClient = yield* HttpClient.HttpClient;
-  const healthResponse = yield* httpClient
-    .execute(HttpClientRequest.get(`${endpoint.rootUrl}${VIBEPROXY_HEALTH_PATH}`))
-    .pipe(
-      Effect.timeoutOption(VIBEPROXY_PROBE_TIMEOUT_MS),
-      Effect.orElseSucceed(() => Option.none()),
-    );
-  if (Option.isNone(healthResponse) || !requestSucceeded(healthResponse.value.status)) {
-    return {
-      enabled: true,
-      endpoint: endpoint.rootUrl,
-      reachable: false,
-      models: [],
-      message: "VibeProxy is not running — requests will fail.",
-    } satisfies ServerProviderVibeProxyStatus;
-  }
-
   const baseRequest = HttpClientRequest.get(`${endpoint.rootUrl}${VIBEPROXY_MODELS_PATH}`).pipe(
     HttpClientRequest.setHeader("accept", "application/json"),
   );
@@ -107,7 +90,16 @@ export const probeVibeProxy = Effect.fn("probeVibeProxy")(function* (
     Effect.timeoutOption(VIBEPROXY_PROBE_TIMEOUT_MS),
     Effect.orElseSucceed(() => Option.none()),
   );
-  if (Option.isNone(modelsResponse) || !requestSucceeded(modelsResponse.value.status)) {
+  if (Option.isNone(modelsResponse)) {
+    return {
+      enabled: true,
+      endpoint: endpoint.rootUrl,
+      reachable: false,
+      models: [],
+      message: "VibeProxy is not running — requests will fail.",
+    } satisfies ServerProviderVibeProxyStatus;
+  }
+  if (!requestSucceeded(modelsResponse.value.status)) {
     return {
       enabled: true,
       endpoint: endpoint.rootUrl,

@@ -7,7 +7,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientError, HttpClientResponse } from "effect/unstable/http";
 
 import {
   codexLaunchArgv,
@@ -215,7 +215,6 @@ describe("probeVibeProxy", () => {
         models: ["gpt-one", "claude-one"],
       });
       assert.deepStrictEqual(seen, [
-        { url: `${ENDPOINT.rootUrl}/healthz`, authorization: undefined },
         { url: `${ENDPOINT.rootUrl}/v1/models`, authorization: "Bearer client-key" },
       ]);
     }).pipe(
@@ -225,15 +224,13 @@ describe("probeVibeProxy", () => {
             url: request.url,
             authorization: request.headers.authorization,
           });
-          return request.url.endsWith("/healthz")
-            ? new Response(null, { status: 200 })
-            : Response.json({ data: [{ id: "gpt-one" }, { id: "claude-one" }] });
+          return Response.json({ data: [{ id: "gpt-one" }, { id: "claude-one" }] });
         }),
       ),
     );
   });
 
-  it.effect("reports an unreachable proxy without requesting models", () =>
+  it.effect("reports an unreachable proxy when the models request cannot connect", () =>
     Effect.gen(function* () {
       assert.deepStrictEqual(yield* probeVibeProxy(ENDPOINT, undefined), {
         enabled: true,
@@ -242,6 +239,35 @@ describe("probeVibeProxy", () => {
         models: [],
         message: "VibeProxy is not running — requests will fail.",
       });
-    }).pipe(Effect.provide(httpClientLayer(() => new Response(null, { status: 503 })))),
+    }).pipe(
+      Effect.provide(
+        Layer.succeed(
+          HttpClient.HttpClient,
+          HttpClient.make((request) =>
+            Effect.fail(
+              new HttpClientError.HttpClientError({
+                reason: new HttpClientError.TransportError({
+                  request,
+                  cause: new Error("Connection refused"),
+                }),
+              }),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("reports a reachable proxy when its model list is unavailable", () =>
+    Effect.gen(function* () {
+      assert.deepStrictEqual(yield* probeVibeProxy(ENDPOINT, "invalid-key"), {
+        enabled: true,
+        endpoint: ENDPOINT.rootUrl,
+        reachable: true,
+        models: [],
+        message:
+          "VibeProxy is running, but its model list is unavailable. Check the client API key.",
+      });
+    }).pipe(Effect.provide(httpClientLayer(() => new Response(null, { status: 401 })))),
   );
 });
