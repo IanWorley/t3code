@@ -80,6 +80,51 @@ describe("deriveProviderModelsForDisplay", () => {
     expect(markup).toContain("blur-[2px]");
     expect(markup).not.toContain("developer@example.com");
   });
+
+  it("renders independent VibeProxy routing and model offering controls", () => {
+    const instanceId = ProviderInstanceId.make("codex");
+    const driver = ProviderDriverKind.make("codex");
+    const markup = renderToStaticMarkup(
+      createElement(ProviderInstanceCard, {
+        instanceId,
+        instance: { driver, vibeProxy: { enabled: true, offerModels: false } },
+        driverOption: undefined,
+        liveProvider: {
+          instanceId,
+          driver,
+          enabled: true,
+          installed: true,
+          version: null,
+          status: "ready",
+          auth: { status: "authenticated" },
+          checkedAt: "2026-08-29T12:00:00.000Z",
+          models: [],
+          slashCommands: [],
+          skills: [],
+          vibeProxy: {
+            enabled: true,
+            endpoint: "http://127.0.0.1:8318",
+            reachable: true,
+            models: ["proxy-one", "proxy-two"],
+          },
+        },
+        mode: "editor",
+        onUpdate: () => undefined,
+        hiddenModels: [],
+        favoriteModels: [],
+        modelOrder: [],
+        onHiddenModelsChange: () => undefined,
+        onFavoriteModelsChange: () => undefined,
+        onModelOrderChange: () => undefined,
+      }),
+    );
+
+    expect(markup).toContain('aria-label="Enable VibeProxy routing"');
+    expect(markup).toContain('aria-label="Offer VibeProxy models"');
+    expect(markup).toContain("Local model gateway");
+    expect(markup).toContain("2 models detected · not added to picker");
+  });
+
   it("surfaces a failed probe message in both the list row and the editor", () => {
     const instanceId = ProviderInstanceId.make("codex_work");
     const driver = ProviderDriverKind.make("codex");

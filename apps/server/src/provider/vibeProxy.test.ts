@@ -1,0 +1,212 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { assert, describe, it } from "@effect/vitest";
+import {
+  ProviderDriverKind,
+  ProviderInstanceId,
+  VIBEPROXY_CLIENT_API_KEY_ENV,
+  type ServerProvider,
+} from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+
+import { codexLaunchArgv } from "./Layers/codexLaunchArgs.ts";
+import {
+  applyVibeProxyStatus,
+  discoverVibeProxyEndpoint,
+  parseVibeProxyConfig,
+  probeVibeProxy,
+  withVibeProxyClaudeEnvironment,
+  withVibeProxyCodexLaunchArgs,
+  type VibeProxyEndpoint,
+} from "./vibeProxy.ts";
+
+const ENDPOINT: VibeProxyEndpoint = {
+  rootUrl: "http://127.0.0.1:8318",
+  openAiBaseUrl: "http://127.0.0.1:8318/v1",
+};
+
+const BASE_PROVIDER: ServerProvider = {
+  instanceId: ProviderInstanceId.make("codex"),
+  driver: ProviderDriverKind.make("codex"),
+  enabled: true,
+  installed: true,
+  version: null,
+  status: "ready",
+  auth: { status: "authenticated" },
+  checkedAt: "2026-08-28T00:00:00.000Z",
+  models: [
+    {
+      slug: "gpt-existing",
+      name: "GPT Existing",
+      isCustom: false,
+      capabilities: null,
+    },
+  ],
+  slashCommands: [],
+  skills: [],
+};
+
+describe("parseVibeProxyConfig", () => {
+  it("normalizes supported loopback hosts", () => {
+    assert.deepStrictEqual(parseVibeProxyConfig('host: "localhost"\nport: 8318\n'), ENDPOINT);
+    assert.deepStrictEqual(parseVibeProxyConfig("host: ::1\nport: 8318\n"), ENDPOINT);
+  });
+
+  it("rejects missing, malformed, wildcard, and remote endpoints", () => {
+    assert.isNull(parseVibeProxyConfig("port: 8318\n"));
+    assert.isNull(parseVibeProxyConfig("host: 0.0.0.0\nport: 8318\n"));
+    assert.isNull(parseVibeProxyConfig("host: 192.168.1.2\nport: 8318\n"));
+    assert.isNull(parseVibeProxyConfig("host: localhost\nport: nope\n"));
+  });
+});
+
+it.layer(NodeServices.layer)("VibeProxy discovery", (it) => {
+  it.effect("prefers merged config and falls back when it is malformed", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const configDirectory = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-vibeproxy-config-",
+      });
+      yield* fileSystem.writeFileString(
+        `${configDirectory}/config.yaml`,
+        "host: 127.0.0.1\nport: 8317\n",
+      );
+      yield* fileSystem.writeFileString(
+        `${configDirectory}/merged-config.yaml`,
+        "host: 0.0.0.0\nport: 8318\n",
+      );
+
+      assert.deepStrictEqual(yield* discoverVibeProxyEndpoint(configDirectory), {
+        rootUrl: "http://127.0.0.1:8317",
+        openAiBaseUrl: "http://127.0.0.1:8317/v1",
+      });
+    }),
+  );
+});
+
+describe("VibeProxy runtime routing", () => {
+  it("appends typed Codex config overrides after user arguments", () => {
+    const launchArgs = withVibeProxyCodexLaunchArgs("--enable foo", ENDPOINT, true);
+    assert.deepStrictEqual(codexLaunchArgv(launchArgs), [
+      "--enable",
+      "foo",
+      "-c",
+      'model_provider="t3_vibeproxy"',
+      "-c",
+      'model_providers.t3_vibeproxy.name="VibeProxy"',
+      "-c",
+      'model_providers.t3_vibeproxy.base_url="http://127.0.0.1:8318/v1"',
+      "-c",
+      'model_providers.t3_vibeproxy.wire_api="responses"',
+      "-c",
+      `model_providers.t3_vibeproxy.env_key="${VIBEPROXY_CLIENT_API_KEY_ENV}"`,
+    ]);
+  });
+
+  it("removes direct Anthropic credentials from the routed Claude environment", () => {
+    assert.deepStrictEqual(
+      withVibeProxyClaudeEnvironment(
+        {
+          ANTHROPIC_API_KEY: "direct-key",
+          ANTHROPIC_AUTH_TOKEN: "direct-token",
+          KEEP_ME: "yes",
+        },
+        ENDPOINT,
+        "proxy-key",
+      ),
+      {
+        ANTHROPIC_BASE_URL: ENDPOINT.rootUrl,
+        ANTHROPIC_AUTH_TOKEN: "proxy-key",
+        KEEP_ME: "yes",
+      },
+    );
+  });
+
+  it("adds proxy-only models without replacing built-in metadata", () => {
+    const enriched = applyVibeProxyStatus(BASE_PROVIDER, {
+      enabled: true,
+      endpoint: ENDPOINT.rootUrl,
+      reachable: true,
+      models: ["gpt-existing", "proxy-only"],
+    });
+    assert.strictEqual(enriched.models[0]?.name, "GPT Existing");
+    assert.deepStrictEqual(enriched.models[1], {
+      slug: "proxy-only",
+      name: "proxy-only",
+      isCustom: true,
+      capabilities: null,
+    });
+    assert.deepStrictEqual(enriched.vibeProxy?.addedModels, ["proxy-only"]);
+  });
+
+  it("keeps proxy-only models out of the picker when offering is disabled", () => {
+    const enriched = applyVibeProxyStatus(
+      BASE_PROVIDER,
+      {
+        enabled: true,
+        endpoint: ENDPOINT.rootUrl,
+        reachable: true,
+        models: ["gpt-existing", "proxy-only"],
+      },
+      false,
+    );
+    assert.deepStrictEqual(enriched.models, BASE_PROVIDER.models);
+    assert.deepStrictEqual(enriched.vibeProxy?.models, ["gpt-existing", "proxy-only"]);
+    assert.deepStrictEqual(enriched.vibeProxy?.addedModels, []);
+  });
+});
+
+const httpClientLayer = (
+  handler: (request: Parameters<Parameters<typeof HttpClient.make>[0]>[0]) => Response,
+) =>
+  Layer.succeed(
+    HttpClient.HttpClient,
+    HttpClient.make((request) =>
+      Effect.succeed(HttpClientResponse.fromWeb(request, handler(request))),
+    ),
+  );
+
+describe("probeVibeProxy", () => {
+  it.effect("loads models with the configured bearer token", () => {
+    const seen: Array<{ readonly url: string; readonly authorization: string | undefined }> = [];
+    return Effect.gen(function* () {
+      const status = yield* probeVibeProxy(ENDPOINT, "client-key");
+      assert.deepStrictEqual(status, {
+        enabled: true,
+        endpoint: ENDPOINT.rootUrl,
+        reachable: true,
+        models: ["gpt-one", "claude-one"],
+      });
+      assert.deepStrictEqual(seen, [
+        { url: `${ENDPOINT.rootUrl}/healthz`, authorization: undefined },
+        { url: `${ENDPOINT.rootUrl}/v1/models`, authorization: "Bearer client-key" },
+      ]);
+    }).pipe(
+      Effect.provide(
+        httpClientLayer((request) => {
+          seen.push({
+            url: request.url,
+            authorization: request.headers.authorization,
+          });
+          return request.url.endsWith("/healthz")
+            ? new Response(null, { status: 200 })
+            : Response.json({ data: [{ id: "gpt-one" }, { id: "claude-one" }] });
+        }),
+      ),
+    );
+  });
+
+  it.effect("reports an unreachable proxy without requesting models", () =>
+    Effect.gen(function* () {
+      assert.deepStrictEqual(yield* probeVibeProxy(ENDPOINT, undefined), {
+        enabled: true,
+        endpoint: ENDPOINT.rootUrl,
+        reachable: false,
+        models: [],
+        message: "VibeProxy is not running — requests will fail.",
+      });
+    }).pipe(Effect.provide(httpClientLayer(() => new Response(null, { status: 503 })))),
+  );
+});
