@@ -1,5 +1,3 @@
-import * as NodeOS from "node:os";
-
 import type {
   ProviderInstanceEnvironment,
   ServerProvider,
@@ -7,19 +5,13 @@ import type {
 } from "@t3tools/contracts";
 import { VIBEPROXY_CLIENT_API_KEY_ENV } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
-import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 
-const VIBEPROXY_CONFIG_DIRECTORY = ".cli-proxy-api";
-const VIBEPROXY_CONFIG_FILENAMES = ["merged-config.yaml", "config.yaml"] as const;
 const VIBEPROXY_HEALTH_PATH = "/healthz";
 const VIBEPROXY_MODELS_PATH = "/v1/models";
 const VIBEPROXY_PROBE_TIMEOUT_MS = 2_000;
-const LOOPBACK_HOST = "127.0.0.1";
-const MAX_PORT = 65_535;
 const VIBEPROXY_PROVIDER_ID = "t3_vibeproxy";
 
 const VibeProxyModelsResponse = Schema.Struct({
@@ -36,76 +28,25 @@ export interface VibeProxyEndpoint {
   readonly openAiBaseUrl: string;
 }
 
-interface ParsedVibeProxyConfig {
-  readonly host: string;
-  readonly port: number;
-}
-
-function unquoteYamlScalar(value: string): string {
-  const withoutComment = value.split("#", 1)[0]?.trim() ?? "";
-  if (withoutComment.length >= 2) {
-    const first = withoutComment[0];
-    const last = withoutComment.at(-1);
-    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
-      return withoutComment.slice(1, -1).trim();
+export function parseVibeProxyUrl(value: string): VibeProxyEndpoint | null {
+  try {
+    const parsed = new URL(value.trim());
+    if (
+      (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+      parsed.username.length > 0 ||
+      parsed.password.length > 0 ||
+      parsed.search.length > 0 ||
+      parsed.hash.length > 0
+    ) {
+      return null;
     }
-  }
-  return withoutComment;
-}
-
-function normalizeLoopbackHost(host: string): string | null {
-  const normalized = host
-    .trim()
-    .toLowerCase()
-    .replace(/^\[|\]$/gu, "");
-  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1"
-    ? LOOPBACK_HOST
-    : null;
-}
-
-export function parseVibeProxyConfig(contents: string): VibeProxyEndpoint | null {
-  let rawHost: string | undefined;
-  let rawPort: string | undefined;
-  for (const line of contents.split(/\r?\n/gu)) {
-    if (/^\s/gu.test(line)) continue;
-    const separatorIndex = line.indexOf(":");
-    if (separatorIndex < 0) continue;
-    const key = line.slice(0, separatorIndex).trim();
-    const value = unquoteYamlScalar(line.slice(separatorIndex + 1));
-    if (key === "host") rawHost = value;
-    if (key === "port") rawPort = value;
-  }
-
-  const host = rawHost === undefined ? null : normalizeLoopbackHost(rawHost);
-  const port = rawPort === undefined ? Number.NaN : Number(rawPort);
-  if (host === null || !Number.isInteger(port) || port < 1 || port > MAX_PORT) {
+    const pathname = parsed.pathname.replace(/\/+$/u, "");
+    const rootUrl = `${parsed.origin}${pathname}`;
+    return { rootUrl, openAiBaseUrl: `${rootUrl}/v1` };
+  } catch {
     return null;
   }
-  const parsed = { host, port } satisfies ParsedVibeProxyConfig;
-  const rootUrl = `http://${parsed.host}:${parsed.port}`;
-  return {
-    rootUrl,
-    openAiBaseUrl: `${rootUrl}/v1`,
-  };
 }
-
-export const discoverVibeProxyEndpoint = Effect.fn("discoverVibeProxyEndpoint")(function* (
-  configDirectoryOverride?: string,
-) {
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const configDirectory =
-    configDirectoryOverride ?? path.join(NodeOS.homedir(), VIBEPROXY_CONFIG_DIRECTORY);
-  for (const filename of VIBEPROXY_CONFIG_FILENAMES) {
-    const contents = yield* fileSystem
-      .readFileString(path.join(configDirectory, filename))
-      .pipe(Effect.option);
-    if (Option.isNone(contents)) continue;
-    const endpoint = parseVibeProxyConfig(contents.value);
-    if (endpoint !== null) return endpoint;
-  }
-  return null;
-});
 
 export function resolveVibeProxyClientKey(
   environment: ProviderInstanceEnvironment,
@@ -220,11 +161,12 @@ export function applyVibeProxyStatus(
     }
   }
   const hasRoutingWarning = !status.reachable || status.message !== undefined;
+  const shouldApplyRoutingWarning = hasRoutingWarning && snapshot.status === "ready";
   return {
     ...snapshot,
     models,
     vibeProxy: { ...status, addedModels },
-    ...(hasRoutingWarning
+    ...(shouldApplyRoutingWarning
       ? {
           status: "warning" as const,
           message: status.message ?? "VibeProxy routing is unavailable.",

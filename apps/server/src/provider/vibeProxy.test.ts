@@ -1,4 +1,3 @@
-import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
   ProviderDriverKind,
@@ -7,15 +6,13 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
 import { codexLaunchArgv } from "./Layers/codexLaunchArgs.ts";
 import {
   applyVibeProxyStatus,
-  discoverVibeProxyEndpoint,
-  parseVibeProxyConfig,
+  parseVibeProxyUrl,
   probeVibeProxy,
   withVibeProxyClaudeEnvironment,
   withVibeProxyCodexLaunchArgs,
@@ -48,42 +45,19 @@ const BASE_PROVIDER: ServerProvider = {
   skills: [],
 };
 
-describe("parseVibeProxyConfig", () => {
-  it("normalizes supported loopback hosts", () => {
-    assert.deepStrictEqual(parseVibeProxyConfig('host: "localhost"\nport: 8318\n'), ENDPOINT);
-    assert.deepStrictEqual(parseVibeProxyConfig("host: ::1\nport: 8318\n"), ENDPOINT);
+describe("parseVibeProxyUrl", () => {
+  it("builds the OpenAI endpoint from a configured proxy URL", () => {
+    assert.deepStrictEqual(parseVibeProxyUrl("http://localhost:8317/"), {
+      rootUrl: "http://localhost:8317",
+      openAiBaseUrl: "http://localhost:8317/v1",
+    });
   });
 
-  it("rejects missing, malformed, wildcard, and remote endpoints", () => {
-    assert.isNull(parseVibeProxyConfig("port: 8318\n"));
-    assert.isNull(parseVibeProxyConfig("host: 0.0.0.0\nport: 8318\n"));
-    assert.isNull(parseVibeProxyConfig("host: 192.168.1.2\nport: 8318\n"));
-    assert.isNull(parseVibeProxyConfig("host: localhost\nport: nope\n"));
+  it("rejects unsupported or credential-bearing URLs", () => {
+    assert.isNull(parseVibeProxyUrl("ftp://localhost:8317"));
+    assert.isNull(parseVibeProxyUrl("http://key@localhost:8317"));
+    assert.isNull(parseVibeProxyUrl("not a URL"));
   });
-});
-
-it.layer(NodeServices.layer)("VibeProxy discovery", (it) => {
-  it.effect("prefers merged config and falls back when it is malformed", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const configDirectory = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "t3-vibeproxy-config-",
-      });
-      yield* fileSystem.writeFileString(
-        `${configDirectory}/config.yaml`,
-        "host: 127.0.0.1\nport: 8317\n",
-      );
-      yield* fileSystem.writeFileString(
-        `${configDirectory}/merged-config.yaml`,
-        "host: 0.0.0.0\nport: 8318\n",
-      );
-
-      assert.deepStrictEqual(yield* discoverVibeProxyEndpoint(configDirectory), {
-        rootUrl: "http://127.0.0.1:8317",
-        openAiBaseUrl: "http://127.0.0.1:8317/v1",
-      });
-    }),
-  );
 });
 
 describe("VibeProxy runtime routing", () => {
@@ -155,6 +129,26 @@ describe("VibeProxy runtime routing", () => {
     assert.deepStrictEqual(enriched.models, BASE_PROVIDER.models);
     assert.deepStrictEqual(enriched.vibeProxy?.models, ["gpt-existing", "proxy-only"]);
     assert.deepStrictEqual(enriched.vibeProxy?.addedModels, []);
+  });
+
+  it("preserves a provider error when proxy routing is unavailable", () => {
+    const enriched = applyVibeProxyStatus(
+      {
+        ...BASE_PROVIDER,
+        status: "error",
+        message: "Codex CLI is not installed.",
+      },
+      {
+        enabled: true,
+        endpoint: ENDPOINT.rootUrl,
+        reachable: false,
+        models: [],
+        message: "VibeProxy is not running — requests will fail.",
+      },
+    );
+
+    assert.strictEqual(enriched.status, "error");
+    assert.strictEqual(enriched.message, "Codex CLI is not installed.");
   });
 });
 

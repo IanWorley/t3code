@@ -8,6 +8,15 @@ import * as Path from "effect/Path";
 import { mergeProviderInstanceEnvironment } from "./ProviderInstanceEnvironment.ts";
 
 describe("mergeProviderInstanceEnvironment", () => {
+  it("returns an environment that can be changed without mutating the base", () => {
+    const baseEnv = { PATH: "/bin" };
+    const merged = mergeProviderInstanceEnvironment(undefined, baseEnv);
+
+    merged.NEW_VALUE = "new";
+
+    expect(baseEnv).toEqual({ PATH: "/bin" });
+  });
+
   it.effect.each([
     { value: "~/.account", tail: ".account" },
     { value: "~\\.account\\work", tail: ".account\\work" },

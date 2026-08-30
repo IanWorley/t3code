@@ -66,6 +66,7 @@ const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
+const VIBEPROXY_API_KEY_SECRET_NAME = "vibeproxy-client-api-key";
 
 /**
  * Fold the legacy in-config `enabled` flag into the envelope-level
@@ -186,7 +187,20 @@ export function redactServerSettingsForClient(settings: ServerSettings): ServerS
       },
     ]),
   );
-  return { ...settings, providerInstances, usageLimitSources };
+  return {
+    ...settings,
+    vibeProxy: {
+      ...settings.vibeProxy,
+      apiKey: {
+        value: "",
+        ...(settings.vibeProxy.apiKey.value.length > 0 || settings.vibeProxy.apiKey.valueRedacted
+          ? { valueRedacted: true }
+          : {}),
+      },
+    },
+    providerInstances,
+    usageLimitSources,
+  };
 }
 
 export class ServerSettingsService extends Context.Service<
@@ -669,6 +683,24 @@ const make = Effect.gen(function* () {
     settings: ServerSettings,
   ): Effect.Effect<ServerSettings, ServerSettingsError> =>
     Effect.gen(function* () {
+      const vibeProxyApiKey = settings.vibeProxy.apiKey.valueRedacted
+        ? yield* secretStore.get(VIBEPROXY_API_KEY_SECRET_NAME).pipe(
+            Effect.map(
+              Option.match({
+                onSome: (secret) => textDecoder.decode(secret),
+                onNone: () => "",
+              }),
+            ),
+            Effect.mapError(
+              (cause) =>
+                new ServerSettingsError({
+                  settingsPath,
+                  operation: "read-secret",
+                  cause,
+                }),
+            ),
+          )
+        : settings.vibeProxy.apiKey.value;
       const providerInstances: Record<string, ProviderInstanceConfig> = {
         ...settings.providerInstances,
       };
@@ -724,6 +756,10 @@ const make = Effect.gen(function* () {
       }
       return {
         ...settings,
+        vibeProxy: {
+          ...settings.vibeProxy,
+          apiKey: { ...settings.vibeProxy.apiKey, value: vibeProxyApiKey },
+        },
         providerInstances: providerInstances as ServerSettings["providerInstances"],
         usageLimitSources: usageLimitSources as ServerSettings["usageLimitSources"],
       };
@@ -751,6 +787,36 @@ const make = Effect.gen(function* () {
     next: ServerSettings,
   ): Effect.Effect<ServerSettings, ServerSettingsError> =>
     Effect.gen(function* () {
+      let vibeProxyApiKey = next.vibeProxy.apiKey;
+      if (!vibeProxyApiKey.valueRedacted) {
+        if (vibeProxyApiKey.value.length > 0) {
+          yield* secretStore
+            .set(VIBEPROXY_API_KEY_SECRET_NAME, textEncoder.encode(vibeProxyApiKey.value))
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new ServerSettingsError({
+                    settingsPath,
+                    operation: "write-secret",
+                    cause,
+                  }),
+              ),
+            );
+          vibeProxyApiKey = { value: "", valueRedacted: true };
+        } else {
+          yield* secretStore.remove(VIBEPROXY_API_KEY_SECRET_NAME).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ServerSettingsError({
+                  settingsPath,
+                  operation: "remove-secret",
+                  cause,
+                }),
+            ),
+          );
+          vibeProxyApiKey = { value: "" };
+        }
+      }
       const providerInstances: Record<string, ProviderInstanceConfig> = {
         ...next.providerInstances,
       };
@@ -896,6 +962,7 @@ const make = Effect.gen(function* () {
 
       return {
         ...next,
+        vibeProxy: { ...next.vibeProxy, apiKey: vibeProxyApiKey },
         providerInstances: providerInstances as ServerSettings["providerInstances"],
         usageLimitSources: usageLimitSources as ServerSettings["usageLimitSources"],
       };
