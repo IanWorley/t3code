@@ -56,6 +56,7 @@ describe("ServerProvider", () => {
         endpoint: "http://127.0.0.1:8318",
         reachable: true,
         models: ["gpt-5.6-sol", "claude-sonnet-5"],
+        addedModels: ["claude-sonnet-5"],
       },
     });
     expect(parsed.vibeProxy).toEqual({
@@ -63,6 +64,7 @@ describe("ServerProvider", () => {
       endpoint: "http://127.0.0.1:8318",
       reachable: true,
       models: ["gpt-5.6-sol", "claude-sonnet-5"],
+      addedModels: ["claude-sonnet-5"],
     });
   });
 

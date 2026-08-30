@@ -21,8 +21,9 @@ export function getVibeProxyModelAdvisory(
 
 export function getVibeProxyModelSourceLabel(
   entry: ProviderInstanceEntry | undefined,
+  model: string,
 ): string | null {
-  return entry?.snapshot.vibeProxy?.enabled ? "VibeProxy" : null;
+  return entry?.snapshot.vibeProxy?.addedModels?.includes(model) ? "VibeProxy" : null;
 }
 
 export function describeVibeProxyInstance(entry: ProviderInstanceEntry): string | null {

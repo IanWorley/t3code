@@ -117,7 +117,8 @@ explicit proxy choice never silently becomes a direct upstream request. Proxy-on
 projected as custom models while exact built-in matches retain their existing metadata. Each
 instance can disable that projection independently with `vibeProxy.offerModels` while keeping the
 runtime route active; the live proxy inventory remains in the status snapshot for availability
-advisories.
+advisories. The snapshot also records the exact IDs added by the projection so clients badge only
+proxy-added models, not native harness models whose traffic happens to use the proxy route.
 
 ## Attachment access
 

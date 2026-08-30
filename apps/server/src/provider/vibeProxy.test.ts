@@ -138,6 +138,7 @@ describe("VibeProxy runtime routing", () => {
       isCustom: true,
       capabilities: null,
     });
+    assert.deepStrictEqual(enriched.vibeProxy?.addedModels, ["proxy-only"]);
   });
 
   it("keeps proxy-only models out of the picker when offering is disabled", () => {
@@ -153,6 +154,7 @@ describe("VibeProxy runtime routing", () => {
     );
     assert.deepStrictEqual(enriched.models, BASE_PROVIDER.models);
     assert.deepStrictEqual(enriched.vibeProxy?.models, ["gpt-existing", "proxy-only"]);
+    assert.deepStrictEqual(enriched.vibeProxy?.addedModels, []);
   });
 });
 

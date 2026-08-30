@@ -204,11 +204,13 @@ export function applyVibeProxyStatus(
   offerModels = true,
 ): ServerProvider {
   const models = [...snapshot.models];
+  const addedModels: Array<string> = [];
   if (offerModels) {
     const seen = new Set(models.map((model) => model.slug));
     for (const slug of status.models) {
       if (seen.has(slug)) continue;
       seen.add(slug);
+      addedModels.push(slug);
       models.push({
         slug,
         name: slug,
@@ -221,7 +223,7 @@ export function applyVibeProxyStatus(
   return {
     ...snapshot,
     models,
-    vibeProxy: status,
+    vibeProxy: { ...status, addedModels },
     ...(hasRoutingWarning
       ? {
           status: "warning" as const,

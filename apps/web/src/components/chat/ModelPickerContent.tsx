@@ -815,7 +815,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}
                         disabledReason={disabledReason}
                         advisoryReason={advisoryReason}
-                        sourceBadgeLabel={getVibeProxyModelSourceLabel(instanceEntry)}
+                        sourceBadgeLabel={getVibeProxyModelSourceLabel(instanceEntry, model.slug)}
                         onToggleFavorite={() => toggleFavorite(model.instanceId, model.slug)}
                       />
                     );

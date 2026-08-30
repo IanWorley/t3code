@@ -25,14 +25,16 @@ const provider = (reachable: boolean): ServerProvider => ({
     enabled: true,
     endpoint: "http://127.0.0.1:8318",
     reachable,
-    models: ["gpt-available"],
+    models: ["gpt-available", "proxy-only"],
+    addedModels: ["proxy-only"],
   },
 });
 
 describe("VibeProxy picker presentation", () => {
   it("marks only models absent from the reachable proxy", () => {
     const entry = deriveProviderInstanceEntries([provider(true)])[0];
-    expect(getVibeProxyModelSourceLabel(entry)).toBe("VibeProxy");
+    expect(getVibeProxyModelSourceLabel(entry, "proxy-only")).toBe("VibeProxy");
+    expect(getVibeProxyModelSourceLabel(entry, "gpt-available")).toBeNull();
     expect(getVibeProxyModelAdvisory(entry, "gpt-available")).toBeNull();
     expect(getVibeProxyModelAdvisory(entry, "gpt-missing")).toBe(
       "Not currently available through VibeProxy",
@@ -52,6 +54,6 @@ describe("VibeProxy picker presentation", () => {
   it("does not label models from a direct provider instance", () => {
     const { vibeProxy: _omit, ...direct } = provider(true);
     const entry = deriveProviderInstanceEntries([direct])[0];
-    expect(getVibeProxyModelSourceLabel(entry)).toBeNull();
+    expect(getVibeProxyModelSourceLabel(entry, "proxy-only")).toBeNull();
   });
 });

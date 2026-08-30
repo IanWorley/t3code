@@ -163,6 +163,7 @@ export const ServerProviderVibeProxyStatus = Schema.Struct({
   endpoint: TrimmedNonEmptyString,
   reachable: Schema.Boolean,
   models: Schema.Array(TrimmedNonEmptyString),
+  addedModels: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
   message: Schema.optional(TrimmedNonEmptyString),
 });
 export type ServerProviderVibeProxyStatus = typeof ServerProviderVibeProxyStatus.Type;
