@@ -9,7 +9,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
-import { codexLaunchArgv } from "./Layers/codexLaunchArgs.ts";
+import {
+  codexLaunchArgv,
+  consumeCodexLaunchArgsEnvironment,
+  resolveCodexLaunchArgs,
+} from "./Layers/codexLaunchArgs.ts";
 import {
   applyVibeProxyStatus,
   parseVibeProxyUrl,
@@ -61,6 +65,30 @@ describe("parseVibeProxyUrl", () => {
 });
 
 describe("VibeProxy runtime routing", () => {
+  it("keeps generated Codex routing after consuming an environment launch override", () => {
+    const resolvedLaunch = consumeCodexLaunchArgsEnvironment("--enable settings-feature", {
+      T3CODE_CODEX_LAUNCH_ARGS: "--strict-config --enable env-feature",
+    });
+    const launchArgs = withVibeProxyCodexLaunchArgs(resolvedLaunch.launchArgs, ENDPOINT, false);
+
+    assert.deepStrictEqual(
+      codexLaunchArgv(resolveCodexLaunchArgs(launchArgs, resolvedLaunch.environment)),
+      [
+        "--strict-config",
+        "--enable",
+        "env-feature",
+        "-c",
+        'model_provider="t3_vibeproxy"',
+        "-c",
+        'model_providers.t3_vibeproxy.name="VibeProxy"',
+        "-c",
+        'model_providers.t3_vibeproxy.base_url="http://127.0.0.1:8318/v1"',
+        "-c",
+        'model_providers.t3_vibeproxy.wire_api="responses"',
+      ],
+    );
+  });
+
   it("appends typed Codex config overrides after user arguments", () => {
     const launchArgs = withVibeProxyCodexLaunchArgs("--enable foo", ENDPOINT, true);
     assert.deepStrictEqual(codexLaunchArgv(launchArgs), [
@@ -79,12 +107,25 @@ describe("VibeProxy runtime routing", () => {
     ]);
   });
 
-  it("removes direct Anthropic credentials from the routed Claude environment", () => {
+  it("removes competing remote routes from the routed Claude environment", () => {
     assert.deepStrictEqual(
       withVibeProxyClaudeEnvironment(
         {
           ANTHROPIC_API_KEY: "direct-key",
           ANTHROPIC_AUTH_TOKEN: "direct-token",
+          ANTHROPIC_AWS_BASE_URL: "https://aws.example.com",
+          ANTHROPIC_BEDROCK_BASE_URL: "https://bedrock.example.com",
+          ANTHROPIC_BEDROCK_MANTLE_BASE_URL: "https://mantle.example.com",
+          ANTHROPIC_FOUNDRY_BASE_URL: "https://foundry.example.com",
+          ANTHROPIC_GOOGLE_CLOUD_BASE_URL: "https://google-cloud.example.com",
+          ANTHROPIC_VERTEX_BASE_URL: "https://vertex.example.com",
+          CLAUDE_CODE_USE_ANTHROPIC_AWS: "1",
+          CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD: "1",
+          CLAUDE_CODE_USE_BEDROCK: "1",
+          CLAUDE_CODE_USE_FOUNDRY: "1",
+          CLAUDE_CODE_USE_GATEWAY: "1",
+          CLAUDE_CODE_USE_MANTLE: "1",
+          CLAUDE_CODE_USE_VERTEX: "1",
           KEEP_ME: "yes",
         },
         ENDPOINT,

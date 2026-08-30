@@ -41,6 +41,7 @@ import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeCodexAdapter } from "../Layers/CodexAdapter.ts";
+import { consumeCodexLaunchArgsEnvironment } from "../Layers/codexLaunchArgs.ts";
 import { checkCodexProviderStatus, makePendingCodexProvider } from "../Layers/CodexProvider.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
@@ -159,7 +160,11 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
           detail: "VibeProxy routing is enabled, but the global VibeProxy URL is invalid.",
         });
       }
-      const processEnv = mergeProviderInstanceEnvironment(environment);
+      const resolvedLaunch = consumeCodexLaunchArgsEnvironment(
+        config.launchArgs,
+        mergeProviderInstanceEnvironment(environment),
+      );
+      const processEnv = resolvedLaunch.environment;
       if (clientKey) processEnv[VIBEPROXY_CLIENT_API_KEY_ENV] = clientKey;
       const homeLayout = yield* resolveCodexHomeLayout(config);
       const continuationIdentity = codexContinuationIdentity(homeLayout);
@@ -187,12 +192,12 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         ...(vibeProxyEndpoint
           ? {
               launchArgs: withVibeProxyCodexLaunchArgs(
-                config.launchArgs,
+                resolvedLaunch.launchArgs,
                 vibeProxyEndpoint,
                 clientKey !== undefined,
               ),
             }
-          : {}),
+          : { launchArgs: resolvedLaunch.launchArgs }),
       } satisfies CodexSettings;
       const maintenanceCapabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
         binaryPath: effectiveConfig.binaryPath,

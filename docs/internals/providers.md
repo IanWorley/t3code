@@ -113,14 +113,16 @@ instances. Older per-instance client keys remain a runtime fallback so existing 
 continue to work.
 
 Routing is applied only to the effective process configuration. Codex receives a T3-owned custom
-model-provider override; Claude receives an Anthropic gateway environment overlay. Neither driver
-edits harness config files. Enabled routing fails closed when URL validation or health fails, so an
-explicit proxy choice never silently becomes a direct upstream request. Proxy-only model IDs are
-projected as custom models while exact built-in matches retain their existing metadata. Each
-instance can disable that projection independently with `vibeProxy.offerModels` while keeping the
-runtime route active; the live proxy inventory remains in the status snapshot for availability
-advisories. The snapshot also records the exact IDs added by the projection so clients badge only
-proxy-added models, not native harness models whose traffic happens to use the proxy route.
+model-provider override; Claude receives an Anthropic gateway environment overlay that removes
+competing Bedrock, Vertex, Foundry, and other backend selectors inherited by the server process.
+Neither driver edits harness config files. Enabled routing fails closed when URL validation or
+health fails, so an explicit proxy choice never silently becomes a direct upstream request.
+Proxy-only model IDs are projected as custom models while exact built-in matches retain their
+existing metadata. Each instance can disable that projection independently with
+`vibeProxy.offerModels` while keeping the runtime route active; the live proxy inventory remains in
+the status snapshot for availability advisories. The snapshot also records the exact IDs added by
+the projection so clients badge only proxy-added models, not native harness models whose traffic
+happens to use the proxy route.
 
 ## Attachment access
 
