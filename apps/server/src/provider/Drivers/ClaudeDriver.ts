@@ -137,6 +137,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       const eventLoggers = yield* ProviderEventLoggers;
       const modelManifest = yield* ModelManifest.ModelManifest;
       const clientKey = resolveVibeProxyClientKey(environment);
+      const offerVibeProxyModels = vibeProxy?.offerModels ?? true;
       const vibeProxyEndpoint = vibeProxy?.enabled ? yield* discoverVibeProxyEndpoint() : null;
       if (vibeProxy?.enabled && vibeProxyEndpoint === null) {
         return yield* new ProviderDriverError({
@@ -215,7 +216,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
             probeVibeProxy(vibeProxyEndpoint, clientKey).pipe(
               Effect.provideService(HttpClient.HttpClient, httpClient),
             ),
-            (provider, status) => applyVibeProxyStatus(provider, status),
+            (provider, status) => applyVibeProxyStatus(provider, status, offerVibeProxyModels),
             { concurrent: true },
           )
         : baseCheckProvider;
@@ -236,7 +237,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
           return vibeProxyEndpoint
             ? pending.pipe(
                 Effect.map((provider) =>
-                  applyVibeProxyStatus(provider, checkingVibeProxyStatus(vibeProxyEndpoint)),
+                  applyVibeProxyStatus(
+                    provider,
+                    checkingVibeProxyStatus(vibeProxyEndpoint),
+                    offerVibeProxyModels,
+                  ),
                 ),
               )
             : pending;

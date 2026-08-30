@@ -114,7 +114,10 @@ Routing is applied only to the effective process configuration. Codex receives a
 model-provider override; Claude receives an Anthropic gateway environment overlay. Neither driver
 edits harness config files. Enabled routing fails closed when discovery or health fails, so an
 explicit proxy choice never silently becomes a direct upstream request. Proxy-only model IDs are
-projected as custom models while exact built-in matches retain their existing metadata.
+projected as custom models while exact built-in matches retain their existing metadata. Each
+instance can disable that projection independently with `vibeProxy.offerModels` while keeping the
+runtime route active; the live proxy inventory remains in the status snapshot for availability
+advisories.
 
 ## Attachment access
 

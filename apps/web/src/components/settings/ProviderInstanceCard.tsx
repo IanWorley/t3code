@@ -483,6 +483,7 @@ export function ProviderInstanceCard({
     : null;
   const supportsVibeProxy = driverKind !== null && isVibeProxySupportedDriver(driverKind);
   const vibeProxyEnabled = instance.vibeProxy?.enabled ?? false;
+  const vibeProxyModelsOffered = instance.vibeProxy?.offerModels ?? true;
   const providerEnvironment = instance.environment ?? [];
   const vibeProxyKey = providerEnvironment.find(
     (variable) => variable.name === VIBEPROXY_CLIENT_API_KEY_ENV,
@@ -557,12 +558,17 @@ export function ProviderInstanceCard({
   };
 
   const updateVibeProxyEnabled = (value: boolean) => {
-    const { vibeProxy: _omit, ...rest } = instance;
-    onUpdate(
-      value
-        ? ({ ...rest, vibeProxy: { enabled: true } } as ProviderInstanceConfig)
-        : (rest as ProviderInstanceConfig),
-    );
+    onUpdate({
+      ...instance,
+      vibeProxy: { enabled: value, offerModels: vibeProxyModelsOffered },
+    });
+  };
+
+  const updateVibeProxyModelsOffered = (value: boolean) => {
+    onUpdate({
+      ...instance,
+      vibeProxy: { enabled: vibeProxyEnabled, offerModels: value },
+    });
   };
 
   const updateVibeProxyKey = (value: string) => {
@@ -946,17 +952,33 @@ export function ProviderInstanceCard({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-xs font-medium text-foreground">
-                      Route through VibeProxy
+                      Enable VibeProxy routing
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Makes VibeProxy models available to this instance without editing the harness
-                      configuration.
+                      Routes this instance through the VibeProxy server running on the T3 host.
                     </p>
                   </div>
                   <Switch
                     checked={vibeProxyEnabled}
                     onCheckedChange={(checked) => updateVibeProxyEnabled(Boolean(checked))}
-                    aria-label="Route through VibeProxy"
+                    aria-label="Enable VibeProxy routing"
+                  />
+                </div>
+
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium text-foreground">
+                      Offer VibeProxy models
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Adds proxy-only models to this instance's model picker. Turn this off to keep
+                      the normal model list while still routing through VibeProxy.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={vibeProxyModelsOffered}
+                    onCheckedChange={(checked) => updateVibeProxyModelsOffered(Boolean(checked))}
+                    aria-label="Offer VibeProxy models"
                   />
                 </div>
 
@@ -995,7 +1017,7 @@ export function ProviderInstanceCard({
                     )}
                   >
                     {liveProvider?.vibeProxy
-                      ? `${liveProvider.vibeProxy.endpoint} · ${liveProvider.vibeProxy.reachable ? `${liveProvider.vibeProxy.models.length} models available` : (liveProvider.vibeProxy.message ?? "Unavailable")}`
+                      ? `${liveProvider.vibeProxy.endpoint} · ${liveProvider.vibeProxy.reachable ? `${liveProvider.vibeProxy.models.length} models detected${vibeProxyModelsOffered ? "" : " · not added to picker"}` : (liveProvider.vibeProxy.message ?? "Unavailable")}`
                       : "Waiting for VibeProxy status…"}
                   </p>
                 ) : null}

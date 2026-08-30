@@ -116,6 +116,7 @@ export type ProviderInstanceEnvironment = typeof ProviderInstanceEnvironment.Typ
 
 export const ProviderInstanceVibeProxyConfig = Schema.Struct({
   enabled: Schema.Boolean,
+  offerModels: Schema.optionalKey(Schema.Boolean),
 });
 export type ProviderInstanceVibeProxyConfig = typeof ProviderInstanceVibeProxyConfig.Type;
 

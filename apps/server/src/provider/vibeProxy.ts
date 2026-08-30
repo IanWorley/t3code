@@ -201,18 +201,21 @@ export function checkingVibeProxyStatus(
 export function applyVibeProxyStatus(
   snapshot: ServerProvider,
   status: ServerProviderVibeProxyStatus,
+  offerModels = true,
 ): ServerProvider {
   const models = [...snapshot.models];
-  const seen = new Set(models.map((model) => model.slug));
-  for (const slug of status.models) {
-    if (seen.has(slug)) continue;
-    seen.add(slug);
-    models.push({
-      slug,
-      name: slug,
-      isCustom: true,
-      capabilities: null,
-    });
+  if (offerModels) {
+    const seen = new Set(models.map((model) => model.slug));
+    for (const slug of status.models) {
+      if (seen.has(slug)) continue;
+      seen.add(slug);
+      models.push({
+        slug,
+        name: slug,
+        isCustom: true,
+        capabilities: null,
+      });
+    }
   }
   const hasRoutingWarning = !status.reachable || status.message !== undefined;
   return {
