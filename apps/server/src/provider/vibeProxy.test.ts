@@ -133,12 +133,25 @@ describe("VibeProxy runtime routing", () => {
     ]);
   });
 
-  it("removes direct Anthropic credentials from the routed Claude environment", () => {
+  it("removes competing remote routes from the routed Claude environment", () => {
     assert.deepStrictEqual(
       withVibeProxyClaudeEnvironment(
         {
           ANTHROPIC_API_KEY: "direct-key",
           ANTHROPIC_AUTH_TOKEN: "direct-token",
+          ANTHROPIC_AWS_BASE_URL: "https://aws.example.com",
+          ANTHROPIC_BEDROCK_BASE_URL: "https://bedrock.example.com",
+          ANTHROPIC_BEDROCK_MANTLE_BASE_URL: "https://mantle.example.com",
+          ANTHROPIC_FOUNDRY_BASE_URL: "https://foundry.example.com",
+          ANTHROPIC_GOOGLE_CLOUD_BASE_URL: "https://google-cloud.example.com",
+          ANTHROPIC_VERTEX_BASE_URL: "https://vertex.example.com",
+          CLAUDE_CODE_USE_ANTHROPIC_AWS: "1",
+          CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD: "1",
+          CLAUDE_CODE_USE_BEDROCK: "1",
+          CLAUDE_CODE_USE_FOUNDRY: "1",
+          CLAUDE_CODE_USE_GATEWAY: "1",
+          CLAUDE_CODE_USE_MANTLE: "1",
+          CLAUDE_CODE_USE_VERTEX: "1",
           KEEP_ME: "yes",
         },
         ENDPOINT,
