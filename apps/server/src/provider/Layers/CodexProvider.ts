@@ -30,6 +30,7 @@ import { codexAppServerArgs, resolveCodexLaunchArgs } from "./codexLaunchArgs.ts
 import {
   AUTH_PROBE_TIMEOUT_MS,
   buildServerProvider,
+  COMPACT_SLASH_COMMAND,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
@@ -414,6 +415,53 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
   } satisfies CodexAppServerProviderSnapshot;
 });
 
+export const probeCodexSkillsForCwd = Effect.fn("probeCodexSkillsForCwd")(function* (input: {
+  readonly binaryPath: string;
+  readonly homePath?: string;
+  readonly launchArgs?: string;
+  readonly cwd: string;
+  readonly environment?: NodeJS.ProcessEnv;
+}) {
+  const resolvedHomePath = input.homePath ? expandHomePath(input.homePath) : undefined;
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const environment = {
+    ...input.environment,
+    ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
+  };
+  const spawnCommand = yield* resolveSpawnCommand(
+    input.binaryPath,
+    codexAppServerArgs(input.launchArgs),
+    { env: environment, extendEnv: true },
+  );
+  const child = yield* spawner
+    .spawn(
+      ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+        cwd: input.cwd,
+        env: environment,
+        extendEnv: true,
+        forceKillAfter: CODEX_APP_SERVER_PROBE_FORCE_KILL_AFTER,
+        shell: spawnCommand.shell,
+      }),
+    )
+    .pipe(
+      Effect.mapError(
+        (cause) =>
+          new CodexErrors.CodexAppServerSpawnError({
+            command: `${input.binaryPath} app-server`,
+            cause,
+          }),
+      ),
+    );
+  const clientContext = yield* Layer.build(CodexClient.layerChildProcess(child));
+  const client = yield* Effect.service(CodexClient.CodexAppServerClient).pipe(
+    Effect.provide(clientContext),
+  );
+  yield* client.request("initialize", buildCodexInitializeParams());
+  yield* client.notify("initialized", undefined);
+  const skillsResponse = yield* client.request("skills/list", { cwds: [input.cwd] });
+  return parseCodexSkillsListResponse(skillsResponse, input.cwd);
+});
+
 const emptyCodexModelsFromSettings = (codexSettings: CodexSettings): ServerProvider["models"] => {
   const models = new Set<string>();
   for (const model of codexSettings.customModels) {
@@ -601,6 +649,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     models: snapshot.models,
     skills: snapshot.skills,
     slashCommands: [
+      COMPACT_SLASH_COMMAND,
       {
         name: "feedback",
         description: "Send this thread and Codex logs to OpenAI",

@@ -298,6 +298,8 @@ export type ThreadStartedPayload = typeof ThreadStartedPayload.Type;
 
 const ThreadStateChangedPayload = Schema.Struct({
   state: RuntimeThreadState,
+  beforeTokens: Schema.optional(NonNegativeInt),
+  afterTokens: Schema.optional(NonNegativeInt),
   detail: Schema.optional(Schema.Unknown),
 });
 export type ThreadStateChangedPayload = typeof ThreadStateChangedPayload.Type;
@@ -1196,24 +1198,6 @@ export type ProviderRuntimeEventV2 = typeof ProviderRuntimeEventV2.Type;
 
 export const ProviderRuntimeEvent = ProviderRuntimeEventV2;
 export type ProviderRuntimeEvent = ProviderRuntimeEventV2;
-
-// Compatibility aliases for call sites still importing legacy names.
-const ProviderRuntimeMessageDeltaEvent = ProviderRuntimeContentDeltaEvent;
-export type ProviderRuntimeMessageDeltaEvent = ProviderRuntimeContentDeltaEvent;
-const ProviderRuntimeMessageCompletedEvent = ProviderRuntimeItemCompletedEvent;
-export type ProviderRuntimeMessageCompletedEvent = ProviderRuntimeItemCompletedEvent;
-const ProviderRuntimeToolStartedEvent = ProviderRuntimeItemStartedEvent;
-export type ProviderRuntimeToolStartedEvent = ProviderRuntimeItemStartedEvent;
-const ProviderRuntimeToolCompletedEvent = ProviderRuntimeItemCompletedEvent;
-export type ProviderRuntimeToolCompletedEvent = ProviderRuntimeItemCompletedEvent;
-const ProviderRuntimeApprovalRequestedEvent = ProviderRuntimeRequestOpenedEvent;
-export type ProviderRuntimeApprovalRequestedEvent = ProviderRuntimeRequestOpenedEvent;
-const ProviderRuntimeApprovalResolvedEvent = ProviderRuntimeRequestResolvedEvent;
-export type ProviderRuntimeApprovalResolvedEvent = ProviderRuntimeRequestResolvedEvent;
-
-// Legacy helper aliases retained for adapters/tests.
-const ProviderRuntimeToolKind = Schema.Literals(["command", "file-read", "file-change", "other"]);
-export type ProviderRuntimeToolKind = typeof ProviderRuntimeToolKind.Type;
 
 export const ProviderRuntimeTurnStatus = RuntimeTurnState;
 export type ProviderRuntimeTurnStatus = RuntimeTurnState;
