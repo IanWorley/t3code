@@ -264,7 +264,9 @@ jobs:
             rust_target: x86_64-unknown-linux-gnu
             resource_key: linux-x64
           - label: Windows x64
-            runner: windows-2025
+            # GitHub's windows-2025 label now resolves to a VS 2026 image, but
+            # the desktop preflight and installer target the VS 2022 component IDs.
+            runner: windows-2022
             platform: win
             target: nsis
             arch: x64
