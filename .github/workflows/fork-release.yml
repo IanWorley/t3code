@@ -335,10 +335,14 @@ jobs:
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $installPath = & $vswhere -products * -latest -property installationPath
           $setupExe = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
+          # Current GitHub VS 2022 images expose the Spectre libraries through
+          # the VC runtime component; the desktop preflight accepts this and
+          # the older VC.Tools component used by other runner images.
+          $spectreComponent = "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre"
           $proc = Start-Process -FilePath $setupExe `
             -ArgumentList "modify", "--installPath", "`"$installPath`"", `
             "--add", "Microsoft.VisualStudio.Workload.VCTools", "--includeRecommended", `
-            "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64.Spectre", `
+            "--add", $spectreComponent, `
             "--quiet", "--norestart" `
             -Wait -PassThru -NoNewWindow
           if ($null -eq $proc -or $proc.ExitCode -ne 0) {
@@ -349,7 +353,7 @@ jobs:
 
           $verifiedInstall = & $vswhere -latest -products * `
             -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-            Microsoft.VisualStudio.Component.VC.Tools.x86.x64.Spectre `
+            $spectreComponent `
             -property installationPath
           if (-not $verifiedInstall) {
             Write-Error "Visual Studio C++ and Spectre components were not installed together."

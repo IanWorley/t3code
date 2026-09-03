@@ -1706,26 +1706,33 @@ export const preflightMacDesktopBuild = Effect.fn("preflightMacDesktopBuild")(fu
   }
 });
 
-function windowsVswherePrerequisiteScript(arch: typeof BuildArch.Type): string {
-  const components =
+const windowsVswherePrerequisiteScript = (arch: typeof BuildArch.Type): string => {
+  const toolComponent =
+    arch === "arm64"
+      ? "Microsoft.VisualStudio.Component.VC.Tools.ARM64"
+      : "Microsoft.VisualStudio.Component.VC.Tools.x86.x64";
+  const spectreComponents =
     arch === "arm64"
       ? [
-          "Microsoft.VisualStudio.Component.VC.Tools.ARM64",
           "Microsoft.VisualStudio.Component.VC.Tools.ARM64.Spectre",
+          "Microsoft.VisualStudio.Component.VC.Runtimes.ARM64.Spectre",
         ]
       : [
-          "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
           "Microsoft.VisualStudio.Component.VC.Tools.x86.x64.Spectre",
+          "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre",
         ];
+  const spectreComponentList = spectreComponents.map((component) => `'${component}'`).join(", ");
   return [
     "$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\\Installer\\vswhere.exe'",
     "if (!(Test-Path $vswhere)) { exit 1 }",
-    `$install = & $vswhere -latest -products * -requires ${components.join(" ")} -property installationPath`,
+    `$spectreComponents = @(${spectreComponentList})`,
+    "$install = $null",
+    `foreach ($spectre in $spectreComponents) { $candidate = & $vswhere -latest -products * -requires '${toolComponent}' $spectre -property installationPath; if ($candidate) { $install = $candidate; break } }`,
     "if (!$install) { exit 1 }",
     "$kitsRoot = Get-ItemPropertyValue 'HKLM:\\SOFTWARE\\Microsoft\\Windows Kits\\Installed Roots' -Name KitsRoot10 -ErrorAction SilentlyContinue",
     "if (!$kitsRoot -or !(Test-Path (Join-Path $kitsRoot 'Lib'))) { exit 1 }",
   ].join("; ");
-}
+};
 
 export const preflightWindowsDesktopBuild = Effect.fn("preflightWindowsDesktopBuild")(
   function* (input: { readonly arch: typeof BuildArch.Type; readonly bundlesWslRuntime: boolean }) {

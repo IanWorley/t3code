@@ -896,10 +896,16 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-windows-preflight-" });
         const pythonPath = path.join(tempDir, "python.exe");
         yield* fs.writeFileString(pythonPath, "python");
+        const commands: Array<{ readonly command: string; readonly args: ReadonlyArray<string> }> =
+          [];
         const spawner = Layer.succeed(
           ChildProcessSpawner.ChildProcessSpawner,
           ChildProcessSpawner.make((command) => {
-            const childProcess = command as unknown as { readonly command: string };
+            const childProcess = command as unknown as {
+              readonly command: string;
+              readonly args: ReadonlyArray<string>;
+            };
+            commands.push(childProcess);
             const fails =
               childProcess.command === "rustc" ||
               childProcess.command === "powershell.exe" ||
@@ -926,6 +932,12 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         assert.deepStrictEqual(error.missing, ["rust", "python", "msvc"]);
         assert.equal(error.rustTarget, "x86_64-pc-windows-msvc");
         assert.include(error.message, "Visual Studio Build Tools components");
+        const powershell = commands.find((command) => command.command === "powershell.exe");
+        assert.isDefined(powershell);
+        assert.include(
+          powershell!.args.join(" "),
+          "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre",
+        );
       }),
     ),
   );
