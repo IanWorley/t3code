@@ -335,9 +335,9 @@ jobs:
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $installPath = & $vswhere -products * -latest -property installationPath
           $setupExe = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
-          # Current GitHub VS 2022 images expose the Spectre libraries through
-          # the VC runtime component; the desktop preflight accepts this and
-          # the older VC.Tools component used by other runner images.
+          # Current GitHub VS 2022 images expose Spectre through the VC runtime
+          # component. Upstream's desktop preflight verifies the installed
+          # Spectre library directory instead of relying on obsolete metadata.
           $spectreComponent = "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre"
           $proc = Start-Process -FilePath $setupExe `
             -ArgumentList "modify", "--installPath", "`"$installPath`"", `
