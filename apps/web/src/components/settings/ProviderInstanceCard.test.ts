@@ -41,6 +41,31 @@ describe("deriveProviderModelsForDisplay", () => {
     ).toEqual(["server-model", "kept-custom"]);
   });
 
+  it("shows proxy-provided custom models alongside configured custom models", () => {
+    const liveModels: ReadonlyArray<ServerProviderModel> = [
+      {
+        slug: "server-model",
+        name: "Server Model",
+        isCustom: false,
+        capabilities: null,
+      },
+      {
+        slug: "proxy-model",
+        name: "Proxy Model",
+        isCustom: true,
+        capabilities: null,
+      },
+    ];
+
+    expect(
+      deriveProviderModelsForDisplay({
+        liveModels,
+        customModels: [],
+        proxyModels: ["proxy-model"],
+      }).map((model) => model.slug),
+    ).toEqual(["server-model", "proxy-model"]);
+  });
+
   it("prefers the entry's name and capabilities over the stale live custom row", () => {
     const liveCapabilities = { optionDescriptors: [] };
     const customCapabilities = {

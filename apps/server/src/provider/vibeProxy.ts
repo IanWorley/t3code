@@ -149,23 +149,20 @@ export function checkingVibeProxyStatus(
 export function applyVibeProxyStatus(
   snapshot: ServerProvider,
   status: ServerProviderVibeProxyStatus,
-  offerModels = true,
 ): ServerProvider {
   const models = [...snapshot.models];
   const addedModels: Array<string> = [];
-  if (offerModels) {
-    const seen = new Set(models.map((model) => model.slug));
-    for (const slug of status.models) {
-      if (seen.has(slug)) continue;
-      seen.add(slug);
-      addedModels.push(slug);
-      models.push({
-        slug,
-        name: slug,
-        isCustom: true,
-        capabilities: null,
-      });
-    }
+  const seen = new Set(models.map((model) => model.slug));
+  for (const slug of status.models) {
+    if (seen.has(slug)) continue;
+    seen.add(slug);
+    addedModels.push(slug);
+    models.push({
+      slug,
+      name: slug,
+      isCustom: true,
+      capabilities: null,
+    });
   }
   const hasRoutingWarning = !status.reachable || status.message !== undefined;
   const shouldApplyRoutingWarning = hasRoutingWarning && snapshot.status === "ready";

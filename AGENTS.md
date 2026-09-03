@@ -113,6 +113,7 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 ## Pull requests
 
 - Never make a PR unless the developer explicitly asks you to do so.
+- Set every PR's base repository to https://github.com/IanWorley/t3code. Never open a PR against any other repository.
 - Conventional commit titles, plain language: `fix(web): new threads no longer spike CPU`.
 - Body: the problem in a sentence or two, then how you fixed it. End with the model and harness that did the work.
 - UI changes need before/after images. Motion or timing needs a short video.
