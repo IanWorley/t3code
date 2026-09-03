@@ -78,6 +78,11 @@ import {
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import { resolveCursorAcpBaseModelId } from "./CursorProvider.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
+import {
+  discoverCursorSkills,
+  hasCursorSkillMention,
+  rewriteCursorSkillMentions,
+} from "../Drivers/CursorSkills.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
 const CURSOR_PROVIDER = ProviderDriverKind.make("cursor");
@@ -127,6 +132,7 @@ export interface CoreAcpAdapterDefinition<Settings> {
     readonly settings: Settings;
     readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
     readonly cwd: string;
+    readonly runtimeMode: RuntimeMode;
     readonly environment?: NodeJS.ProcessEnv;
     readonly resumeSessionId?: string;
     readonly clientInfo: { readonly name: string; readonly version: string };
@@ -178,6 +184,7 @@ interface CursorSessionContext {
   readonly turns: Array<{ id: TurnId; items: Array<unknown> }>;
   lastPlanFingerprint: string | undefined;
   activeTurnId: TurnId | undefined;
+  cursorSkillNames: ReadonlySet<string> | undefined;
   /** Number of sendTurn prompts currently in flight or being prepared.
    * >0 means a turn is actively running, so a new sendTurn is a steer that
    * continues it, and only the last remaining prompt settles the turn. */
@@ -582,6 +589,7 @@ export function makeCoreAcpAdapter<Settings>(
               ...(options?.environment ? { environment: options.environment } : {}),
               childProcessSpawner,
               cwd,
+              runtimeMode: input.runtimeMode,
               ...(resumeSessionId ? { resumeSessionId } : {}),
               clientInfo: { name: "t3-code", version: "0.0.0" },
               ...(definition.supportsMcpServers && mcpSession
@@ -825,6 +833,7 @@ export function makeCoreAcpAdapter<Settings>(
             turns: [],
             lastPlanFingerprint: undefined,
             activeTurnId: undefined,
+            cursorSkillNames: undefined,
             promptsInFlight: 0,
             stopped: false,
           };
@@ -1018,8 +1027,28 @@ export function makeCoreAcpAdapter<Settings>(
           }
 
           const promptParts: Array<EffectAcpSchema.ContentBlock> = [];
-          if (input.input?.trim()) {
-            promptParts.push({ type: "text", text: input.input.trim() });
+          const rawPrompt = input.input?.trim() ?? "";
+          if (rawPrompt) {
+            let cursorSkillNames = ctx.cursorSkillNames;
+            if (hasCursorSkillMention(rawPrompt) && cursorSkillNames === undefined) {
+              const skills = yield* discoverCursorSkills(
+                ctx.session.cwd,
+                options?.environment,
+              ).pipe(
+                Effect.provideService(FileSystem.FileSystem, fileSystem),
+                Effect.provideService(Path.Path, path),
+              );
+              cursorSkillNames = new Set(
+                skills
+                  .filter((skill) => skill.enabled && skill.userInvocable !== false)
+                  .map((skill) => skill.name),
+              );
+              ctx.cursorSkillNames = cursorSkillNames;
+            }
+            const prompt = cursorSkillNames
+              ? rewriteCursorSkillMentions(rawPrompt, cursorSkillNames)
+              : rawPrompt;
+            promptParts.push({ type: "text", text: prompt });
           }
           if (input.attachments && input.attachments.length > 0) {
             for (const attachment of input.attachments) {
