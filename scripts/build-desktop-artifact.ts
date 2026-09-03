@@ -1706,33 +1706,24 @@ export const preflightMacDesktopBuild = Effect.fn("preflightMacDesktopBuild")(fu
   }
 });
 
-const windowsVswherePrerequisiteScript = (arch: typeof BuildArch.Type): string => {
-  const toolComponent =
+function windowsVswherePrerequisiteScript(arch: typeof BuildArch.Type): string {
+  const toolComponents =
     arch === "arm64"
-      ? "Microsoft.VisualStudio.Component.VC.Tools.ARM64"
-      : "Microsoft.VisualStudio.Component.VC.Tools.x86.x64";
-  const spectreComponents =
-    arch === "arm64"
-      ? [
-          "Microsoft.VisualStudio.Component.VC.Tools.ARM64.Spectre",
-          "Microsoft.VisualStudio.Component.VC.Runtimes.ARM64.Spectre",
-        ]
-      : [
-          "Microsoft.VisualStudio.Component.VC.Tools.x86.x64.Spectre",
-          "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre",
-        ];
-  const spectreComponentList = spectreComponents.map((component) => `'${component}'`).join(", ");
+      ? ["Microsoft.VisualStudio.Component.VC.Tools.ARM64"]
+      : ["Microsoft.VisualStudio.Component.VC.Tools.x86.x64"];
+  const spectreArch = arch === "arm64" ? "arm64" : "x64";
   return [
     "$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\\Installer\\vswhere.exe'",
     "if (!(Test-Path $vswhere)) { exit 1 }",
-    `$spectreComponents = @(${spectreComponentList})`,
-    "$install = $null",
-    `foreach ($spectre in $spectreComponents) { $candidate = & $vswhere -latest -products * -requires '${toolComponent}' $spectre -property installationPath; if ($candidate) { $install = $candidate; break } }`,
+    `$install = & $vswhere -latest -products * -requires ${toolComponents.join(" ")} -property installationPath`,
     "if (!$install) { exit 1 }",
     "$kitsRoot = Get-ItemPropertyValue 'HKLM:\\SOFTWARE\\Microsoft\\Windows Kits\\Installed Roots' -Name KitsRoot10 -ErrorAction SilentlyContinue",
     "if (!$kitsRoot -or !(Test-Path (Join-Path $kitsRoot 'Lib'))) { exit 1 }",
+    "$msvcToolset = Get-ChildItem (Join-Path $install 'VC\\Tools\\MSVC') -Directory | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1",
+    "if (!$msvcToolset) { exit 1 }",
+    `if (!(Test-Path (Join-Path $msvcToolset.FullName 'lib\\spectre\\${spectreArch}'))) { exit 1 }`,
   ].join("; ");
-};
+}
 
 export const preflightWindowsDesktopBuild = Effect.fn("preflightWindowsDesktopBuild")(
   function* (input: { readonly arch: typeof BuildArch.Type; readonly bundlesWslRuntime: boolean }) {

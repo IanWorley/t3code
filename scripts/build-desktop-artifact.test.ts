@@ -934,10 +934,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         assert.include(error.message, "Visual Studio Build Tools components");
         const powershell = commands.find((command) => command.command === "powershell.exe");
         assert.isDefined(powershell);
-        assert.include(
-          powershell!.args.join(" "),
-          "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre",
-        );
+        assert.include(powershell!.args.join(" "), "lib\\spectre\\x64");
       }),
     ),
   );
