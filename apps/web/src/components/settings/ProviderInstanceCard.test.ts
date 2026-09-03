@@ -41,6 +41,31 @@ describe("deriveProviderModelsForDisplay", () => {
     ).toEqual(["server-model", "kept-custom"]);
   });
 
+  it("shows proxy-provided custom models alongside configured custom models", () => {
+    const liveModels: ReadonlyArray<ServerProviderModel> = [
+      {
+        slug: "server-model",
+        name: "Server Model",
+        isCustom: false,
+        capabilities: null,
+      },
+      {
+        slug: "proxy-model",
+        name: "Proxy Model",
+        isCustom: true,
+        capabilities: null,
+      },
+    ];
+
+    expect(
+      deriveProviderModelsForDisplay({
+        liveModels,
+        customModels: [],
+        proxyModels: ["proxy-model"],
+      }).map((model) => model.slug),
+    ).toEqual(["server-model", "proxy-model"]);
+  });
+
   it("shows a redacted provider email in the editor header status line", () => {
     const instanceId = ProviderInstanceId.make("codex");
     const driver = ProviderDriverKind.make("codex");

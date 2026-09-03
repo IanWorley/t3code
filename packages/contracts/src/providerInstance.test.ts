@@ -114,7 +114,7 @@ describe("ProviderInstanceConfig", () => {
       driver: "codex",
       vibeProxy: { enabled: true, offerModels: false },
     });
-    expect(decoded.vibeProxy).toEqual({ enabled: true, offerModels: false });
+    expect(decoded.vibeProxy).toEqual({ enabled: true });
   });
 
   it("trims provider instance envelope fields", () => {

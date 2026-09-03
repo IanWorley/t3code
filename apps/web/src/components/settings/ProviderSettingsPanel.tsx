@@ -698,7 +698,6 @@ export function EnvironmentProviderSettings({
       ...row.instance,
       vibeProxy: {
         enabled,
-        offerModels: row.instance.vibeProxy?.offerModels ?? true,
       },
     });
   };
