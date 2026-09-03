@@ -18,6 +18,7 @@ function provider(input: {
   provider?: ProviderDriverKind;
   instanceId: string;
   models?: ReadonlyArray<string>;
+  proxyModels?: ReadonlyArray<string>;
 }): ServerProvider {
   const driver =
     input.provider ??
@@ -33,14 +34,33 @@ function provider(input: {
     status: "ready",
     auth: { status: "authenticated" },
     checkedAt: "2026-01-01T00:00:00.000Z",
-    models: (input.models ?? []).map((slug) => ({
-      slug,
-      name: slug,
-      isCustom: false,
-      capabilities: {},
-    })),
+    models: [
+      ...(input.models ?? []).map((slug) => ({
+        slug,
+        name: slug,
+        isCustom: false,
+        capabilities: {},
+      })),
+      ...(input.proxyModels ?? []).map((slug) => ({
+        slug,
+        name: slug,
+        isCustom: true,
+        capabilities: null,
+      })),
+    ],
     slashCommands: [],
     skills: [],
+    ...(input.proxyModels
+      ? {
+          vibeProxy: {
+            enabled: true,
+            endpoint: "http://localhost:8317",
+            reachable: true,
+            models: input.proxyModels,
+            addedModels: input.proxyModels,
+          },
+        }
+      : {}),
   };
 }
 
@@ -488,6 +508,24 @@ describe("instance-scoped model selection", () => {
         { preserveUnavailableSelection: true },
       ),
     ).toBe("gpt-5.6-sol");
+  });
+
+  it("includes proxy-provided models for the routed instance", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claudeAgent",
+        models: ["claude-sonnet-5"],
+        proxyModels: ["gpt-5.6-sol"],
+      }),
+    ];
+    const entry = deriveProviderInstanceEntries(providers)[0]!;
+
+    expect(
+      getAppModelOptionsForInstance(settingsWithProviderInstances(), entry).map(
+        (option) => option.slug,
+      ),
+    ).toEqual(["claude-sonnet-5", "gpt-5.6-sol"]);
   });
 
   it("falls back from an explicit non-OpenCode draft with a missing model", () => {

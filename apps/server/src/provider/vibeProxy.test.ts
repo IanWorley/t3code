@@ -156,22 +156,6 @@ describe("VibeProxy runtime routing", () => {
     assert.deepStrictEqual(enriched.vibeProxy?.addedModels, ["proxy-only"]);
   });
 
-  it("keeps proxy-only models out of the picker when offering is disabled", () => {
-    const enriched = applyVibeProxyStatus(
-      BASE_PROVIDER,
-      {
-        enabled: true,
-        endpoint: ENDPOINT.rootUrl,
-        reachable: true,
-        models: ["gpt-existing", "proxy-only"],
-      },
-      false,
-    );
-    assert.deepStrictEqual(enriched.models, BASE_PROVIDER.models);
-    assert.deepStrictEqual(enriched.vibeProxy?.models, ["gpt-existing", "proxy-only"]);
-    assert.deepStrictEqual(enriched.vibeProxy?.addedModels, []);
-  });
-
   it("preserves a provider error when proxy routing is unavailable", () => {
     const enriched = applyVibeProxyStatus(
       {

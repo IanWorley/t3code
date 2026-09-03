@@ -140,6 +140,7 @@ function nextConfigBlobWithValue(
 export function deriveProviderModelsForDisplay(input: {
   readonly liveModels: ReadonlyArray<ServerProviderModel> | undefined;
   readonly customModels: ReadonlyArray<string>;
+  readonly proxyModels?: ReadonlyArray<string>;
 }): ReadonlyArray<ServerProviderModel> {
   const liveCustomModelsBySlug = new Map(
     Arr.filterMap(input.liveModels ?? [], (model) =>
@@ -147,7 +148,8 @@ export function deriveProviderModelsForDisplay(input: {
     ),
   );
   const serverModels = input.liveModels?.filter((model) => !model.isCustom) ?? [];
-  const customModels = input.customModels.map(
+  const customModelSlugs = [...new Set([...input.customModels, ...(input.proxyModels ?? [])])];
+  const customModels = customModelSlugs.map(
     (slug) =>
       liveCustomModelsBySlug.get(slug) ?? {
         slug,
@@ -492,6 +494,9 @@ export function ProviderInstanceCard({
   const modelsForDisplay = deriveProviderModelsForDisplay({
     liveModels: liveProvider?.models,
     customModels,
+    ...(liveProvider?.vibeProxy?.addedModels
+      ? { proxyModels: liveProvider.vibeProxy.addedModels }
+      : {}),
   });
   const hiddenModelCount = modelsForDisplay.filter(
     (model) => !model.isCustom && hiddenModels.includes(model.slug),

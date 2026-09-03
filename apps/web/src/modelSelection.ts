@@ -179,11 +179,13 @@ export function getAppModelOptions(
   selectedModel?: string | null,
 ): AppModelOption[] {
   const rawModels = getProviderModels(providers, provider);
-  // Server-reported custom rows mirror settings and can lag a removal, so
-  // only built-ins are taken from the snapshot; custom rows are rebuilt from
-  // settings below.
+  const proxyModels = new Set(
+    providers.find((candidate) => candidate.driver === provider)?.vibeProxy?.addedModels ?? [],
+  );
+  // User-authored custom rows mirror settings and can lag a removal, so they
+  // are rebuilt below. Proxy-provided rows belong to the live catalog.
   const options: AppModelOption[] = rawModels
-    .filter((model) => !model.isCustom)
+    .filter((model) => !model.isCustom || proxyModels.has(model.slug))
     .map(toAppModelOption);
   const seen = new Set(options.map((option) => option.slug));
   const builtInModelSlugs = new Set(
@@ -239,8 +241,9 @@ export function getAppModelOptionsForInstance(
   entry: ProviderInstanceEntry,
   selectedModel?: string | null,
 ): AppModelOption[] {
+  const proxyModels = new Set(entry.snapshot.vibeProxy?.addedModels ?? []);
   const options: AppModelOption[] = entry.models
-    .filter((model) => !model.isCustom)
+    .filter((model) => !model.isCustom || proxyModels.has(model.slug))
     .map(toAppModelOption);
   const seen = new Set(options.map((option) => option.slug));
   const builtInModelSlugs = new Set(
