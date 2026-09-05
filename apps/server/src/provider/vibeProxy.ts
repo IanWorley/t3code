@@ -9,6 +9,8 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 
+import { withVibeProxyModelCapabilities } from "./vibeProxyModelOptions.ts";
+
 const VIBEPROXY_MODELS_PATH = "/v1/models";
 const VIBEPROXY_PROBE_TIMEOUT_MS = 2_000;
 const VIBEPROXY_PROVIDER_ID = "t3_vibeproxy";
@@ -168,7 +170,10 @@ export function applyVibeProxyStatus(
   const shouldApplyRoutingWarning = hasRoutingWarning && snapshot.status === "ready";
   return {
     ...snapshot,
-    models,
+    models: models.map((model) => ({
+      ...model,
+      capabilities: withVibeProxyModelCapabilities(snapshot.driver, model.capabilities),
+    })),
     vibeProxy: { ...status, addedModels },
     ...(shouldApplyRoutingWarning
       ? {

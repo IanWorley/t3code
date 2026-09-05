@@ -123,7 +123,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       const serverSettings = yield* ServerSettingsService;
       const eventLoggers = yield* ProviderEventLoggers;
       const modelManifest = yield* ModelManifest.ModelManifest;
-      const modelCatalog = modelManifest.current.pipe(Effect.map(resolveClaudeModelCatalog));
+      const modelCatalog = modelManifest.current.pipe(
+        Effect.map((manifest) => ({
+          ...resolveClaudeModelCatalog(manifest),
+          vibeProxy: vibeProxy?.enabled === true,
+        })),
+      );
       const globalSettings = yield* serverSettings.getSettings.pipe(
         Effect.mapError(
           (cause) =>
