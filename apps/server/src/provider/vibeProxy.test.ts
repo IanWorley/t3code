@@ -5,6 +5,8 @@ import {
   VIBEPROXY_CLIENT_API_KEY_ENV,
   type ServerProvider,
 } from "@t3tools/contracts";
+import { getProviderOptionDescriptors, getProviderOptionCurrentValue } from "@t3tools/shared/model";
+import { resolveClaudeCatalogEffort, scopeClaudeModelCatalog } from "./ClaudeModelCatalog.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/unstable/http";
@@ -147,13 +149,65 @@ describe("VibeProxy runtime routing", () => {
       models: ["gpt-existing", "proxy-only"],
     });
     assert.strictEqual(enriched.models[0]?.name, "GPT Existing");
-    assert.deepStrictEqual(enriched.models[1], {
-      slug: "proxy-only",
-      name: "proxy-only",
-      isCustom: true,
-      capabilities: null,
-    });
+    assert.strictEqual(enriched.models[1]?.slug, "proxy-only");
+    assert.strictEqual(enriched.models[1]?.isCustom, true);
     assert.deepStrictEqual(enriched.vibeProxy?.addedModels, ["proxy-only"]);
+  });
+
+  for (const { driver, optionId, effort } of [
+    { driver: "codex", optionId: "reasoningEffort", effort: "xhigh" },
+    { driver: "claudeAgent", optionId: "effort", effort: "max" },
+  ]) {
+    it(`makes reasoning selectable for every ${driver} proxy model`, () => {
+      const enriched = applyVibeProxyStatus(
+        { ...BASE_PROVIDER, driver: ProviderDriverKind.make(driver) },
+        {
+          enabled: true,
+          endpoint: ENDPOINT.rootUrl,
+          reachable: true,
+          models: ["gpt-existing", "proxy-only"],
+        },
+      );
+      for (const model of enriched.models) {
+        const descriptors = getProviderOptionDescriptors({
+          caps: model.capabilities ?? {},
+          selections: [{ id: optionId, value: effort }],
+        });
+        assert.strictEqual(
+          getProviderOptionCurrentValue(descriptors.find((option) => option.id === optionId)),
+          effort,
+        );
+      }
+    });
+  }
+
+  it("preserves existing reasoning choices and unrelated capabilities", () => {
+    const capabilities = {
+      optionDescriptors: [
+        {
+          id: "reasoningEffort",
+          label: "Reasoning",
+          type: "select" as const,
+          options: [{ id: "high", label: "High", isDefault: true }],
+        },
+        { id: "fastMode", label: "Fast", type: "boolean" as const },
+      ],
+    };
+    const enriched = applyVibeProxyStatus(
+      {
+        ...BASE_PROVIDER,
+        models: BASE_PROVIDER.models.map((model) => ({ ...model, capabilities })),
+      },
+      { enabled: true, endpoint: ENDPOINT.rootUrl, reachable: false, models: [] },
+    );
+    assert.deepStrictEqual(enriched.models[0]?.capabilities, capabilities);
+  });
+
+  it("retains Claude proxy effort at dispatch for an unknown custom model", () => {
+    const catalog = scopeClaudeModelCatalog({ models: [], vibeProxy: true }, ["proxy-only"]);
+    assert.strictEqual(resolveClaudeCatalogEffort(catalog, "proxy-only", "max"), "max");
+    assert.isUndefined(resolveClaudeCatalogEffort(catalog, "proxy-only", undefined));
+    assert.isUndefined(resolveClaudeCatalogEffort({ models: [] }, "proxy-only", "max"));
   });
 
   it("preserves a provider error when proxy routing is unavailable", () => {

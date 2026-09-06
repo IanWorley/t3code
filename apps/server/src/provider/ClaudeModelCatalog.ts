@@ -26,6 +26,8 @@ import {
   resolveProviderCatalog,
 } from "./ModelManifest.ts";
 
+import { withVibeProxyModelCapabilities } from "./vibeProxyModelOptions.ts";
+
 const CLAUDE = ProviderDriverKind.make("claudeAgent");
 const EMPTY_CAPABILITIES: ModelCapabilities = { optionDescriptors: [] };
 
@@ -36,6 +38,7 @@ export interface ClaudeCatalogModel {
 }
 
 export interface ClaudeModelCatalog {
+  readonly vibeProxy?: boolean;
   readonly models: ReadonlyArray<ClaudeCatalogModel>;
 }
 
@@ -115,7 +118,7 @@ export function scopeClaudeModelCatalog(
     });
   }
 
-  return { models: [...builtInModels, ...customCatalogModels] };
+  return { ...catalog, models: [...builtInModels, ...customCatalogModels] };
 }
 
 function resolveClaudeCatalogModel(
@@ -140,7 +143,11 @@ export function getClaudeCatalogModelCapabilities(
   catalog: ClaudeModelCatalog,
   slugOrAlias: string | null | undefined,
 ): ModelCapabilities {
-  return resolveClaudeCatalogModel(catalog, slugOrAlias)?.model.capabilities ?? EMPTY_CAPABILITIES;
+  const capabilities =
+    resolveClaudeCatalogModel(catalog, slugOrAlias)?.model.capabilities ?? EMPTY_CAPABILITIES;
+  return catalog.vibeProxy
+    ? (withVibeProxyModelCapabilities(CLAUDE, capabilities) ?? EMPTY_CAPABILITIES)
+    : capabilities;
 }
 
 function isVersionSupported(
