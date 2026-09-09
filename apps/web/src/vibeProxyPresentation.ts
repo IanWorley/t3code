@@ -4,7 +4,7 @@ import type { ProviderInstanceEntry } from "./providerInstances";
 
 const VIBEPROXY_SUPPORTED_DRIVERS = new Set<string>(["codex", "claudeAgent"]);
 
-export const VIBEPROXY_UNAVAILABLE_MODEL_MESSAGE = "Not currently available through VibeProxy";
+const VIBEPROXY_UNAVAILABLE_MODEL_MESSAGE = "Not currently available through VibeProxy";
 
 export function isVibeProxySupportedDriver(driver: ProviderDriverKind): boolean {
   return VIBEPROXY_SUPPORTED_DRIVERS.has(driver);
