@@ -9,7 +9,7 @@ import type * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 
 const KIRO_COMMANDS_AVAILABLE_METHOD = "_kiro.dev/commands/available";
 export const KIRO_COMMANDS_EXECUTE_METHOD = "_kiro.dev/commands/execute";
-export const KIRO_COMMANDS_OPTIONS_METHOD = "_kiro.dev/commands/options";
+const KIRO_COMMANDS_OPTIONS_METHOD = "_kiro.dev/commands/options";
 export const KIRO_EFFORT_COMMAND = "effort";
 
 const KiroCommandMeta = Schema.Struct({
