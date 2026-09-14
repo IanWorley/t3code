@@ -14,6 +14,7 @@ import { withVibeProxyModelCapabilities } from "./vibeProxyModelOptions.ts";
 const VIBEPROXY_MODELS_PATH = "/v1/models";
 const VIBEPROXY_PROBE_TIMEOUT_MS = 2_000;
 const VIBEPROXY_PROVIDER_ID = "t3_vibeproxy";
+const VIBEPROXY_CLAUDE_PLACEHOLDER_TOKEN = "t3-vibeproxy";
 const CLAUDE_ALTERNATE_PROVIDER_ENVIRONMENT_VARIABLES = [
   "ANTHROPIC_AWS_BASE_URL",
   "ANTHROPIC_BEDROCK_BASE_URL",
@@ -225,6 +226,7 @@ export function withVibeProxyClaudeEnvironment(
     delete routed[variable];
   }
   routed.ANTHROPIC_BASE_URL = endpoint.rootUrl;
-  if (clientKey) routed.ANTHROPIC_AUTH_TOKEN = clientKey;
+  // Claude requires a credential even when the proxy itself allows unauthenticated requests.
+  routed.ANTHROPIC_AUTH_TOKEN = clientKey || VIBEPROXY_CLAUDE_PLACEHOLDER_TOKEN;
   return routed;
 }
