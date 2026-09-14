@@ -41,11 +41,12 @@ function detectCliRunner(entryPath: string): CliRunner | null {
 /**
  * The package spec to suggest. The literal spec the user typed (e.g.
  * `@ianworleyxyz/t3@nightly`) is resolved away before our process starts, so
- * re-derive it from the running version: nightly builds re-suggest the nightly
+ * re-derive it from the running version: prerelease builds re-suggest their release
  * channel, anything else suggests the bare package.
  */
 function suggestedPackageSpec(version: string): string {
-  return version.includes("-nightly.") ? `${NPM_PACKAGE_NAME}@nightly` : NPM_PACKAGE_NAME;
+  const channel = /^[^-+]+-(nightly|preview)\./.exec(version)?.[1];
+  return channel === undefined ? NPM_PACKAGE_NAME : `${NPM_PACKAGE_NAME}@${channel}`;
 }
 
 /**

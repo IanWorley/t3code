@@ -589,7 +589,14 @@ export function makeCoreAcpAdapter<Settings>(
           const acp = yield* definition
             .makeRuntime({
               settings: effectiveSettings,
-              ...(options?.environment ? { environment: options.environment } : {}),
+              ...(options?.environment || mcpSession?.agentDeviceEnvironment
+                ? {
+                    environment: McpProviderSession.withAgentDeviceEnvironment(
+                      options?.environment ?? process.env,
+                      mcpSession,
+                    ),
+                  }
+                : {}),
               childProcessSpawner,
               cwd,
               runtimeMode: input.runtimeMode,
@@ -1235,7 +1242,7 @@ export function makeCoreAcpAdapter<Settings>(
       numTurns,
     ) =>
       Effect.gen(function* () {
-        const ctx = yield* requireSession(threadId);
+        yield* requireSession(threadId);
         if (!Number.isInteger(numTurns) || numTurns < 1) {
           return yield* new ProviderAdapterValidationError({
             provider: provider,
@@ -1243,9 +1250,11 @@ export function makeCoreAcpAdapter<Settings>(
             issue: "numTurns must be an integer >= 1.",
           });
         }
-        const nextLength = Math.max(0, ctx.turns.length - numTurns);
-        ctx.turns.splice(nextLength);
-        return { threadId, turns: ctx.turns };
+        return yield* new ProviderAdapterRequestError({
+          provider: provider,
+          method: "thread/rollback",
+          detail: `${definition.displayName} ACP sessions do not support provider-side rollback.`,
+        });
       });
 
     const stopSession: ProviderAdapterShape<ProviderAdapterError>["stopSession"] = (threadId) =>
@@ -1285,7 +1294,7 @@ export function makeCoreAcpAdapter<Settings>(
 
     return {
       provider: provider,
-      capabilities: { sessionModelSwitch: "in-session" },
+      capabilities: { sessionModelSwitch: "in-session", supportsConversationRollback: false },
       compaction: { type: "slash-command", command: "/compress" },
       startSession,
       sendTurn,
