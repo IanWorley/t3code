@@ -1,4 +1,5 @@
 import {
+  type CustomModelSetting,
   type ModelCapabilities,
   type PiSettings,
   type ServerProviderModel,
@@ -50,7 +51,7 @@ const isAcpRequestError = Schema.is(EffectAcpErrors.AcpRequestError);
 const isAcpSpawnError = Schema.is(EffectAcpErrors.AcpSpawnError);
 
 function piModelsFromSettings(
-  customModels: ReadonlyArray<string> | undefined,
+  customModels: ReadonlyArray<CustomModelSetting> | undefined,
   discoveredModels: ReadonlyArray<ServerProviderModel> = DEFAULT_PI_MODELS,
 ): ReadonlyArray<ServerProviderModel> {
   return providerModelsFromSettings(discoveredModels, customModels ?? [], EMPTY_CAPABILITIES);

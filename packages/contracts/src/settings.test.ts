@@ -50,8 +50,6 @@ describe("ServerSettings default permissions", () => {
   });
 });
 
-});
-
 describe("VibeProxy settings", () => {
   it("defaults to the local VibeProxy endpoint", () => {
     expect(decodeServerSettings({}).vibeProxy).toEqual({

@@ -997,12 +997,6 @@ export const BackgroundActivitySettings = Schema.Struct({
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
 /**
- * Server settings a project may override. Every other server setting is
- * environment-wide: providers, keybindings, observability, device hosts,
- * background activity, theme. UI, search and the write planner derive
- * eligibility from this list, so adding a key here is the whole opt-in.
- */
-/**
  * How assistant text reaches clients while a turn runs.
  * - `turn`: hold the whole message until the turn finishes or pauses.
  * - `paragraph`: deliver each finished paragraph or closed code block.
@@ -1011,6 +1005,12 @@ export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 export const ResponseStreamingMode = Schema.Literals(["turn", "paragraph", "token"]);
 export type ResponseStreamingMode = typeof ResponseStreamingMode.Type;
 
+/**
+ * Server settings a project may override. Every other server setting is
+ * environment-wide: providers, keybindings, observability, device hosts,
+ * background activity, theme. UI, search and the write planner derive
+ * eligibility from this list, so adding a key here is the whole opt-in.
+ */
 export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "defaultModelSelection",
   "defaultRuntimeMode",

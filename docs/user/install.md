@@ -5,7 +5,7 @@ desktop, web, or mobile app. Set up the machine where the agents will work first
 
 ## Requirements
 
-`npx t3` needs Node.js only to run npm itself; the CLI it installs is a
+`npx @ianworleyxyz/t3` needs Node.js only to run npm itself; the CLI it installs is a
 self-contained executable. SSH hosts and WSL backends need Node.js 22.16+
 (22.x), 23.11+ (23.x), or 24.10 and later. The native desktop app includes its
 server runtime.
@@ -16,11 +16,11 @@ launch T3 Code and configure providers afterwards.
 ## Run without installing
 
 ```bash
-npx t3@latest
+npx @ianworleyxyz/t3@latest
 ```
 
 This starts the server and opens the local web app. Run
-`npx t3@latest --help` for command-line options.
+`npx @ianworleyxyz/t3@latest --help` for command-line options.
 
 The executable is built for Apple Silicon Macs, Linux, and Windows. There is
 no Intel Mac build of it, because Node cannot produce a single executable for
@@ -29,7 +29,7 @@ on an Intel Mac, build it from source. You need Node.js 24 and `vp` (see
 [Install vp](https://github.com/pingdotgg/t3code#install-vp)):
 
 ```bash
-git clone https://github.com/pingdotgg/t3code
+git clone https://github.com/IanWorley/t3code
 cd t3code && vp i && vp run build:desktop
 node apps/server/dist/bin.mjs
 ```
@@ -40,8 +40,8 @@ however you run other Node processes.
 
 ## Desktop app
 
-Download a release from [GitHub Releases](https://github.com/pingdotgg/t3code/releases),
-or use a package manager:
+Download a release from [GitHub Releases](https://github.com/IanWorley/t3code/releases),
+for this fork. The package managers below install upstream T3 Code:
 
 | Platform           | Install                         |
 | ------------------ | ------------------------------- |
@@ -62,11 +62,11 @@ update can take longer.
 With the desktop app already running on the same machine:
 
 ```bash
-npx t3 app
+npx @ianworleyxyz/t3 app
 ```
 
 This opens a new thread for the current directory, adding the project if needed.
-Pass a path, such as `npx t3 app ../my-project`, to open another directory. It requires
+Pass a path, such as `npx @ianworleyxyz/t3 app ../my-project`, to open another directory. It requires
 the desktop app, so a standalone server or an SSH session is not enough. If the
 command cannot reach the app, start or update the desktop app and try again.
 

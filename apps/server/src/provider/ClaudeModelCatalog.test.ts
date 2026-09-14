@@ -5,6 +5,7 @@ import { hasValidClaudeManifestAdapters } from "./ClaudeModelManifest.ts";
 import type { ModelManifestData } from "./ModelManifest.ts";
 import {
   formatClaudeVersionUpgradeMessage,
+  getClaudeCatalogModelCapabilities,
   normalizeClaudeCatalogEffort,
   resolveClaudeCatalogApiModelId,
   resolveClaudeCatalogEffort,
@@ -135,6 +136,15 @@ describe("Claude model catalog", () => {
       },
     };
     assert.isFalse(hasValidClaudeManifestAdapters(malformed));
+  });
+
+  it("preserves proxy reasoning options when custom models scope the catalog", () => {
+    const catalog = scopeClaudeModelCatalog(
+      { ...resolveClaudeModelCatalog(manifest()), vibeProxy: true },
+      ["proxy-custom"],
+    );
+    const capabilities = getClaudeCatalogModelCapabilities(catalog, "proxy-custom");
+    assert.isTrue(capabilities.optionDescriptors?.some((option) => option.id === "effort"));
   });
 
   it("appends custom models with their own descriptors and keeps bare slugs opaque", () => {

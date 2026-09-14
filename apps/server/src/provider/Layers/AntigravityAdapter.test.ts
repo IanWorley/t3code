@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
+import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 import {
   AntigravitySettings,
   ApprovalRequestId,
@@ -1268,6 +1269,75 @@ it.layer(layer)("AntigravityAdapter", (it) => {
         path: path.join(cwd, "missing.txt"),
       }).pipe(Effect.flip);
       expect(missing._tag).toBe("AcpRequestError");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect.skipIf(!symlinksSupported)(
+    "creates nested files through a symlinked workspace root",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const h = yield* makeHarness();
+        const fixture = yield* fs.makeTempDirectoryScoped({ prefix: "t3-agy-root-link-" });
+        const workspace = path.join(fixture, "workspace");
+        const alias = path.join(fixture, "alias");
+        yield* fs.makeDirectory(workspace);
+        yield* fs.symlink(workspace, alias);
+        yield* h.adapter.startSession({ threadId, cwd: alias, runtimeMode: "approval-required" });
+        const write = h.fileHandlers.write;
+        if (!write) return yield* Effect.die("File handlers were not registered.");
+
+        yield* write({
+          sessionId: nativeSessionId,
+          path: path.join(alias, "..notes", "nested", "new.txt"),
+          content: "created",
+        });
+        expect(yield* fs.readFileString(path.join(workspace, "..notes", "nested", "new.txt"))).toBe(
+          "created",
+        );
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect.skipIf(!symlinksSupported)("rejects file symlinks pointing outside the workspace", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const h = yield* makeHarness();
+      const fixture = yield* fs.makeTempDirectoryScoped({ prefix: "t3-agy-file-link-" });
+      const cwd = path.join(fixture, "workspace");
+      const target = path.join(fixture, "outside.txt");
+      yield* fs.makeDirectory(cwd);
+      yield* fs.writeFileString(target, "original");
+      const link = path.join(cwd, "link.txt");
+      yield* fs.symlink(target, link);
+      yield* h.adapter.startSession({ threadId, cwd, runtimeMode: "approval-required" });
+      const { read, write } = h.fileHandlers;
+      if (!read || !write) return yield* Effect.die("File handlers were not registered.");
+
+      expect(
+        yield* read({ sessionId: nativeSessionId, path: link }).pipe(Effect.flip),
+      ).toMatchObject({
+        _tag: "AcpRequestError",
+      });
+      expect(
+        yield* write({ sessionId: nativeSessionId, path: link, content: "changed" }).pipe(
+          Effect.flip,
+        ),
+      ).toMatchObject({
+        _tag: "AcpRequestError",
+      });
+      expect(yield* fs.readFileString(target)).toBe("original");
+
+      const missingTarget = path.join(fixture, "missing.txt");
+      const danglingLink = path.join(cwd, "dangling.txt");
+      yield* fs.symlink(missingTarget, danglingLink);
+      expect(
+        yield* write({ sessionId: nativeSessionId, path: danglingLink, content: "changed" }).pipe(
+          Effect.flip,
+        ),
+      ).toMatchObject({ _tag: "AcpRequestError" });
+      expect(yield* fs.exists(missingTarget)).toBe(false);
     }).pipe(Effect.scoped),
   );
 

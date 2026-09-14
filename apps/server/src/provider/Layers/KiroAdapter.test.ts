@@ -182,3 +182,33 @@ it.effect("KiroAdapter returns Kiro's advertised ACP permission option ID", () =
     Effect.provide(NodeServices.layer),
   ),
 );
+
+it.effect("KiroAdapter rejects rollback without discarding the provider conversation", () =>
+  Effect.gen(function* () {
+    const platform = yield* HostProcessPlatform;
+    const wrapperPath = yield* Effect.promise(() => makeMockAgentWrapper(platform));
+    const adapter = yield* makeKiroAdapter(
+      decodeKiroSettings({ enabled: true, binaryPath: wrapperPath }),
+    );
+    const threadId = ThreadId.make("kiro-unsupported-rollback");
+    const completion = yield* adapter.streamEvents.pipe(
+      Stream.filter((event) => event.type === "turn.completed"),
+      Stream.take(1),
+      Stream.runCollect,
+      Effect.forkChild,
+    );
+    yield* adapter.startSession({ threadId, cwd: process.cwd(), runtimeMode: "full-access" });
+    yield* adapter.sendTurn({ threadId, input: "Remember this turn", attachments: [] });
+    yield* Fiber.join(completion);
+    const originalTurns = [...(yield* adapter.readThread(threadId)).turns];
+    assert.isNotEmpty(originalTurns);
+    assert.isFalse(adapter.capabilities.supportsConversationRollback);
+    const error = yield* adapter.rollbackThread(threadId, 1).pipe(Effect.flip);
+    assert.equal(error._tag, "ProviderAdapterRequestError");
+    assert.deepStrictEqual((yield* adapter.readThread(threadId)).turns, originalTurns);
+  }).pipe(
+    Effect.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-kiro-rollback-test-" })),
+    Effect.scoped,
+    Effect.provide(NodeServices.layer),
+  ),
+);

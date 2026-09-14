@@ -530,7 +530,14 @@ export function makeKiroAdapter(kiroSettings: KiroSettings, options?: KiroAdapte
           const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
           const acp = yield* makeKiroAcpRuntime({
             kiroSettings: effectiveKiroSettings,
-            ...(options?.environment ? { environment: options.environment } : {}),
+            ...(options?.environment || mcpSession?.agentDeviceEnvironment
+              ? {
+                  environment: McpProviderSession.withAgentDeviceEnvironment(
+                    options?.environment ?? process.env,
+                    mcpSession,
+                  ),
+                }
+              : {}),
             childProcessSpawner,
             cwd,
             runtimeMode: input.runtimeMode,
@@ -1029,7 +1036,7 @@ export function makeKiroAdapter(kiroSettings: KiroSettings, options?: KiroAdapte
 
     const rollbackThread: KiroAdapterShape["rollbackThread"] = (threadId, numTurns) =>
       Effect.gen(function* () {
-        const ctx = yield* requireSession(threadId);
+        yield* requireSession(threadId);
         if (!Number.isInteger(numTurns) || numTurns < 1) {
           return yield* new ProviderAdapterValidationError({
             provider: PROVIDER,
@@ -1037,9 +1044,11 @@ export function makeKiroAdapter(kiroSettings: KiroSettings, options?: KiroAdapte
             issue: "numTurns must be an integer >= 1.",
           });
         }
-        const nextLength = Math.max(0, ctx.turns.length - numTurns);
-        ctx.turns.splice(nextLength);
-        return { threadId, turns: ctx.turns };
+        return yield* new ProviderAdapterRequestError({
+          provider: PROVIDER,
+          method: "thread/rollback",
+          detail: "Kiro ACP sessions do not support provider-side rollback.",
+        });
       });
 
     const stopSession: KiroAdapterShape["stopSession"] = (threadId) =>
@@ -1077,7 +1086,7 @@ export function makeKiroAdapter(kiroSettings: KiroSettings, options?: KiroAdapte
 
     return {
       provider: PROVIDER,
-      capabilities: { sessionModelSwitch: "in-session" },
+      capabilities: { sessionModelSwitch: "in-session", supportsConversationRollback: false },
       startSession,
       sendTurn,
       interruptTurn,

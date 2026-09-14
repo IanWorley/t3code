@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Turns the per-platform CLI archives of one release into the npm packages
- * behind `npx t3` / `npm i -g t3`: one `@t3code/t3-<platformKey>` package per
+ * behind `npx @ianworleyxyz/t3` / `npm i -g @ianworleyxyz/t3`: one `@ianworleyxyz/t3-<platformKey>` package per
  * archive holding the archive's contents verbatim, plus the `t3` launcher
  * that lists them as optionalDependencies and execs the one npm installed.
  * The bytes a user gets from npm are therefore the release archive's, and
@@ -9,8 +9,8 @@
  *
  * Output layout under `--output-dir`:
  *
- *   @t3code/t3-<platformKey>/      archive contents flattened + package.json
- *   @t3code/t3-<platformKey>.tgz   the same tree as an npm tarball
+ *   @ianworleyxyz/t3-<platformKey>/      archive contents flattened + package.json
+ *   @ianworleyxyz/t3-<platformKey>.tgz   the same tree as an npm tarball
  *   t3/                             launcher: package.json, bin/t3.js, README.md
  *   t3.tgz                          the launcher as an npm tarball
  *
@@ -42,8 +42,10 @@ import serverPackageJson from "../apps/server/package.json" with { type: "json" 
 
 import { windowsSystemTar } from "./build-cli-archive.ts";
 
-export const NPM_PLATFORM_PACKAGE_SCOPE = "@t3code";
-export const NPM_LAUNCHER_PACKAGE_NAME = "t3";
+import {
+  NPM_PACKAGE_SCOPE as NPM_PLATFORM_PACKAGE_SCOPE,
+  NPM_PACKAGE_NAME as NPM_LAUNCHER_PACKAGE_NAME,
+} from "../apps/server/src/npmPackage.ts";
 
 const encodePackageJson = Schema.encodeEffect(fromJsonStringPretty(Schema.Unknown));
 
@@ -120,7 +122,7 @@ export function npmPlatformPackageReadme(platformKey: CliArchivePlatformKey): st
     `npx ${NPM_LAUNCHER_PACKAGE_NAME}@latest`,
     "```",
     "",
-    "Source and documentation: https://github.com/pingdotgg/t3code",
+    "Source and documentation: https://github.com/IanWorley/t3code",
     "",
   ].join("\n");
 }
@@ -145,7 +147,7 @@ export function npmLauncherPackageManifest(
 }
 
 /**
- * The launcher every `npx t3` runs. Plain CommonJS with no dependencies so it
+ * The launcher every `npx @ianworleyxyz/t3` runs. Plain CommonJS with no dependencies so it
  * loads on any Node that npm itself runs on; the real work happens in the
  * single-executable it execs.
  */
@@ -167,7 +169,7 @@ try {
       "t3: no T3 Code CLI build is available for this platform (" + key + ").",
       "Supported platforms: " + SUPPORTED.join(", ") + ".",
       "If yours is listed, reinstall t3 so npm fetches its optional dependency.",
-      "The desktop app and release archives are at https://github.com/pingdotgg/t3code/releases",
+      "The desktop app and release archives are at https://github.com/IanWorley/t3code/releases",
       "",
     ].join("\\n"),
   );
@@ -431,7 +433,7 @@ const command = Command.make(
   buildNpmPlatformPackages,
 ).pipe(
   Command.withDescription(
-    "Build the t3 launcher and @t3code/t3-<platform> npm packages from CLI release archives.",
+    "Build the t3 launcher and @ianworleyxyz/t3-<platform> npm packages from CLI release archives.",
   ),
 );
 

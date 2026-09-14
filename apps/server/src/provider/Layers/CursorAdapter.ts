@@ -130,6 +130,7 @@ export interface CoreAcpAdapterDefinition<Settings> {
   readonly supportsCursorExtensions: boolean;
   readonly supportsMcpServers: boolean;
   readonly configureModes: boolean;
+  readonly compaction?: ProviderAdapterShape<ProviderAdapterError>["compaction"];
   readonly makeRuntime: (input: {
     readonly settings: Settings;
     readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
@@ -590,9 +591,12 @@ export function makeCoreAcpAdapter<Settings>(
             .makeRuntime({
               settings: effectiveSettings,
               ...(options?.environment || mcpSession?.agentDeviceEnvironment
-                ? { environment: McpProviderSession.withAgentDeviceEnvironment(
-                    options?.environment ?? process.env, mcpSession,
-                  ) }
+                ? {
+                    environment: McpProviderSession.withAgentDeviceEnvironment(
+                      options?.environment ?? process.env,
+                      mcpSession,
+                    ),
+                  }
                 : {}),
               childProcessSpawner,
               cwd,
@@ -1248,9 +1252,9 @@ export function makeCoreAcpAdapter<Settings>(
           });
         }
         return yield* new ProviderAdapterRequestError({
-          provider: PROVIDER,
+          provider,
           method: "thread/rollback",
-          detail: "Cursor ACP sessions do not support provider-side rollback.",
+          detail: `${definition.displayName} ACP sessions do not support provider-side rollback.`,
         });
       });
 
@@ -1291,8 +1295,8 @@ export function makeCoreAcpAdapter<Settings>(
 
     return {
       provider: provider,
-      capabilities: { sessionModelSwitch: "in-session" },
-      compaction: { type: "slash-command", command: "/compress" },
+      capabilities: { sessionModelSwitch: "in-session", supportsConversationRollback: false },
+      ...(definition.compaction ? { compaction: definition.compaction } : {}),
       startSession,
       sendTurn,
       interruptTurn,
@@ -1323,6 +1327,7 @@ export function makeCursorAdapter(
       supportsCursorExtensions: true,
       supportsMcpServers: true,
       configureModes: true,
+      compaction: { type: "slash-command", command: "/compress" },
       makeRuntime: ({ settings, ...input }) =>
         makeCursorAcpRuntime({ cursorSettings: settings, ...input }),
       applyModelSelection: ({ runtime, model, selections, mapError }) =>

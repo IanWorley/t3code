@@ -1,5 +1,6 @@
 import {
   type KiroSettings,
+  type CustomModelSetting,
   type ModelCapabilities,
   type ServerProvider,
   type ServerProviderAuth,
@@ -64,7 +65,7 @@ const KIRO_FALLBACK_MODELS: ReadonlyArray<ServerProviderModel> = [
 ];
 
 function kiroModelsFromSettings(
-  customModels: ReadonlyArray<string> | undefined,
+  customModels: ReadonlyArray<CustomModelSetting> | undefined,
   builtInModels: ReadonlyArray<ServerProviderModel> = KIRO_FALLBACK_MODELS,
 ): ReadonlyArray<ServerProviderModel> {
   return providerModelsFromSettings(builtInModels, customModels ?? [], EMPTY_CAPABILITIES);

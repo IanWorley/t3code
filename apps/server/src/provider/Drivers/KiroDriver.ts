@@ -42,13 +42,15 @@ const decodeKiroSettings = Schema.decodeSync(KiroSettings);
 const DRIVER_KIND = ProviderDriverKind.make("kiro");
 const UPDATE: ProviderMaintenanceCapabilitiesResolver = {
   resolve: (options) =>
-    makeProviderMaintenanceCapabilities({
-      provider: DRIVER_KIND,
-      packageName: null,
-      updateExecutable: options?.binaryPath?.trim() || "kiro-cli",
-      updateArgs: ["update", "--non-interactive"],
-      updateLockKey: "kiro-cli",
-    }),
+    Effect.succeed(
+      makeProviderMaintenanceCapabilities({
+        provider: DRIVER_KIND,
+        packageName: null,
+        updateExecutable: options?.binaryPath?.trim() || "kiro-cli",
+        updateArgs: ["update", "--non-interactive"],
+        updateLockKey: "kiro-cli",
+      }),
+    ),
 };
 
 export type KiroDriverEnv =
@@ -126,7 +128,7 @@ export const KiroDriver: ProviderDriver<KiroSettings, KiroDriverEnv> = {
 
       const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<KiroSettings>>({
-        maintenanceCapabilities,
+        resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
         getSettings: snapshotSettings.getSettings,
         streamSettings: snapshotSettings.streamSettings,
         haveSettingsChanged: haveProviderSnapshotSettingsChanged,

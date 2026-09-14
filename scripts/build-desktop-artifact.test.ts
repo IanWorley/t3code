@@ -1349,7 +1349,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         });
 
         const primaryProbe = commands.find(
-          (command) => command.options.env?.ELECTRON_RUN_AS_NODE === "1",
+          (command) =>
+            command.command === path.join(fixture.packagedAppDir, fixture.appExecutableName),
         );
         if (primaryProbe === undefined) return assert.fail("Windows primary probe was not spawned");
 
@@ -1371,6 +1372,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           ),
         );
         assert.equal(primaryProbe.options.cwd, fixture.packagedAppDir);
+        assert.equal(primaryProbe.options.env?.ELECTRON_RUN_AS_NODE, "1");
         assert.equal(primaryProbe.options.env?.NODE_PATH, "");
       }),
     ).pipe(
@@ -1489,7 +1491,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         });
 
         assert.isFalse(
-          commands.some((command) => command.options.env?.ELECTRON_RUN_AS_NODE === "1"),
+          commands.some((command) => command.command.endsWith(fixture.appExecutableName)),
         );
         assert.isTrue(
           commands.some(

@@ -1,5 +1,12 @@
 # Release Checklist
 
+This fork releases through [Fork Release](../../.github/workflows/fork-release.yml), using
+GitHub-hosted runners and optional signing. Its `NPM_TOKEN` secret must have publish access to
+`@ianworleyxyz/t3` and the five `@ianworleyxyz/t3-<platform>-<arch>` packages. The workflow builds
+the desktop apps and CLI archives, publishes archive checksums to `IanWorley/t3code`, and packages
+those same CLI binaries for npm. Remote installs and self-updates download this fork's archives.
+The upstream release infrastructure described below uses separate services and publishing credentials.
+
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
 This document covers the unified release workflow for stable and nightly desktop releases.

@@ -217,7 +217,10 @@ const CLIENT_FILE_MAX_BYTES = 8 * 1024 * 1024;
 
 function isInsideRoot(path: Path.Path, root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  return (
+    relative === "" ||
+    (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+  );
 }
 
 /** Resolves an agent-supplied path and rejects anything outside the session roots. */
@@ -230,11 +233,42 @@ const resolveClientFilePath = Effect.fn("AntigravityAdapter.resolveClientFilePat
   }) {
     const { path } = input;
     const resolved = path.resolve(input.requestPath);
-    // Follow symlinks on the parent so a link out of the workspace cannot escape it.
-    const parent = yield* input.fileSystem
-      .realPath(path.dirname(resolved))
-      .pipe(Effect.orElseSucceed(() => path.dirname(resolved)));
-    const real = path.join(parent, path.basename(resolved));
+    // New files can have missing parents. Resolve the nearest existing ancestor
+    // so both the request and allowed roots use the same canonical path.
+    let ancestor = resolved;
+    let real: string;
+    while (true) {
+      const canonical = yield* input.fileSystem
+        .realPath(ancestor)
+        .pipe(
+          Effect.catch((error) =>
+            error.reason._tag === "NotFound"
+              ? Effect.succeed(undefined)
+              : Effect.fail(
+                  EffectAcpErrors.AcpRequestError.invalidParams(
+                    `Could not resolve '${input.requestPath}'.`,
+                  ),
+                ),
+          ),
+        );
+      if (canonical !== undefined) {
+        real = path.join(canonical, path.relative(ancestor, resolved));
+        break;
+      }
+      const link = yield* input.fileSystem.readLink(ancestor).pipe(Effect.option);
+      if (Option.isSome(link)) {
+        return yield* EffectAcpErrors.AcpRequestError.invalidParams(
+          `Path '${input.requestPath}' contains an unresolved symlink.`,
+        );
+      }
+      const parent = path.dirname(ancestor);
+      if (parent === ancestor) {
+        return yield* EffectAcpErrors.AcpRequestError.invalidParams(
+          `Could not resolve '${input.requestPath}'.`,
+        );
+      }
+      ancestor = parent;
+    }
     const roots = yield* Effect.forEach(input.allowedRoots, (root) =>
       input.fileSystem.realPath(root).pipe(Effect.orElseSucceed(() => root)),
     );
