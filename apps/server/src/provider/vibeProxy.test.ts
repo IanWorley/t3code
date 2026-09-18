@@ -141,6 +141,23 @@ describe("VibeProxy runtime routing", () => {
     );
   });
 
+  it("provides Claude authentication for a keyless proxy without reusing direct credentials", () => {
+    const environment = {
+      ANTHROPIC_API_KEY: "direct-key",
+      ANTHROPIC_AUTH_TOKEN: "direct-token",
+    };
+    const routed = withVibeProxyClaudeEnvironment(environment, ENDPOINT, undefined);
+
+    assert.isNotEmpty(routed.ANTHROPIC_AUTH_TOKEN);
+    assert.notEqual(routed.ANTHROPIC_AUTH_TOKEN, environment.ANTHROPIC_AUTH_TOKEN);
+    assert.isUndefined(routed.ANTHROPIC_API_KEY);
+    assert.equal(routed.ANTHROPIC_BASE_URL, ENDPOINT.rootUrl);
+    assert.deepStrictEqual(environment, {
+      ANTHROPIC_API_KEY: "direct-key",
+      ANTHROPIC_AUTH_TOKEN: "direct-token",
+    });
+  });
+
   it("adds proxy-only models without replacing built-in metadata", () => {
     const enriched = applyVibeProxyStatus(BASE_PROVIDER, {
       enabled: true,
