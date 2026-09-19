@@ -393,8 +393,6 @@ jobs:
   # dist-tag, which nothing resolves unless asked for by name.
   publish_cli:
     name: Publish CLI to npm
-    env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     needs:
       [
         preflight,
@@ -440,30 +438,16 @@ jobs:
       - name: Build npm packages from CLI archives
         run: node scripts/build-npm-platform-packages.ts --archives-dir release-cli --version "${{ needs.preflight.outputs.version }}" --output-dir npm-packages
 
-      - name: Check npm token
-        if: env.NPM_TOKEN == ''
-        run: |
-          echo "Missing NPM_TOKEN repository secret; cannot publish @ianworleyxyz/t3." >&2
-          echo "Create an npm automation token with publish rights to the scope and add it as NPM_TOKEN." >&2
-          exit 1
+      # OIDC authentication requires npm >=11.5.1. Keep publishing on a
+      # known version instead of depending on the runner's bundled npm.
+      - name: Setup npm for trusted publishing
+        env:
+          NPM_VERSION: "11.19.0"
+        run: npm install --global "npm@$NPM_VERSION"
 
-      - name: Configure npm auth
-        if: env.NPM_TOKEN != ''
-        run: |
-          cat <<EOF > "$RUNNER_TEMP/.npmrc"
-          //registry.npmjs.org/:_authToken=${NPM_TOKEN}
-          EOF
-          echo "NPM_CONFIG_USERCONFIG=$RUNNER_TEMP/.npmrc" >> "$GITHUB_ENV"
-
-      # A dry run of every package first: an auth or scope error here (the
-      # token lacking scope permissions) fails
-      # before anything is live, instead of after some platforms already are.
-      - name: Check npm publish access (dry run)
-        run: |
-          if ! node apps/server/scripts/cli.ts publish --packages-dir npm-packages --tag "${{ needs.preflight.outputs.cli_dist_tag }}" --dry-run --verbose; then
-            echo "::error::npm publish --dry-run failed. Make sure NPM_TOKEN has publish rights for @ianworleyxyz/t3 and every @ianworleyxyz/t3-<platform> package." >&2
-            exit 1
-          fi
+      # Dry runs validate package contents, but do not verify OIDC access.
+      - name: Validate npm packages (dry run)
+        run: node apps/server/scripts/cli.ts publish --packages-dir npm-packages --tag "${{ needs.preflight.outputs.cli_dist_tag }}" --dry-run --verbose
 
       - name: Publish CLI packages
         run: node apps/server/scripts/cli.ts publish --packages-dir npm-packages --tag "${{ needs.preflight.outputs.cli_dist_tag }}" --verbose

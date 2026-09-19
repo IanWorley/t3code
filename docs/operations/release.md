@@ -4,15 +4,26 @@
 
 This fork releases through `.github/workflows/fork-release.yml`, using GitHub-hosted
 runners and optional signing. It publishes `@ianworleyxyz/t3` and its platform
-packages with the `NPM_TOKEN` secret, then publishes the desktop installers, CLI
-archives, and `SHA256SUMS` to `IanWorley/t3code`. The token needs publish rights
-for `@ianworleyxyz/t3` and each `@ianworleyxyz/t3-<platform>-<arch>` package.
+packages with npm OIDC trusted publishing, then publishes the desktop installers,
+CLI archives, and `SHA256SUMS` to `IanWorley/t3code`. No npm token is required.
 The GitHub release depends on successful npm publication so existing npm-based
 services can update to the same version. Archive-based services download from
 the fork's GitHub releases.
 
-The remaining procedures describe upstream's release workflow; hosted deployments,
-trusted publishing, and preview release dispatch do not apply to this fork.
+Each of the six npm packages needs a GitHub Actions trusted publisher in its npm
+settings: `@ianworleyxyz/t3`, `@ianworleyxyz/t3-darwin-arm64`,
+`@ianworleyxyz/t3-linux-arm64`, `@ianworleyxyz/t3-linux-x64`,
+`@ianworleyxyz/t3-win32-arm64`, and `@ianworleyxyz/t3-win32-x64`.
+Set owner to `IanWorley`, repository to `t3code`, workflow filename to
+`fork-release.yml`, leave environment blank, and enable **Allow npm publish**.
+The publishing job has `id-token: write` and installs a compatible npm version.
+Package repository metadata must point to `https://github.com/IanWorley/t3code`
+so automatically generated provenance matches the workflow. Dry runs validate
+package contents; only a real publish verifies OIDC authentication.
+
+The remaining procedures describe upstream's release workflow and setup; its
+package names, hosted deployments, and preview release dispatch do not apply to
+this fork.
 
 ## What the workflow does
 
