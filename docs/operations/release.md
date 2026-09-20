@@ -10,6 +10,15 @@ The GitHub release depends on successful npm publication so existing npm-based
 services can update to the same version. Archive-based services download from
 the fork's GitHub releases.
 
+Stable and nightly releases also build an unsigned iPhone/iPad IPA on a macOS
+runner through `release-mobile.yml`. The release waits for this build and attaches
+`T3-Code-<version>-ios-unsigned.ipa`. No Apple or Expo credentials are needed in CI;
+install the IPA through AltStore Classic or another signing tool using your own
+Apple account. Free-account signing needs periodic renewal. These builds require
+iOS 18 or later and omit widgets, the share extension, Apple sign-in, and push
+notification entitlements. Upstream Expo over-the-air updates are disabled;
+install a new release IPA to update. Android packaging is not included.
+
 Each of the six npm packages needs a GitHub Actions trusted publisher in its npm
 settings: `@ianworleyxyz/t3`, `@ianworleyxyz/t3-darwin-arm64`,
 `@ianworleyxyz/t3-linux-arm64`, `@ianworleyxyz/t3-linux-x64`,

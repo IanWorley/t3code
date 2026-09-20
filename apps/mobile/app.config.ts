@@ -214,7 +214,7 @@ const config: ExpoConfig = {
   slug: "t3-code",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
-  version: "1.1.1",
+  version: repoEnv.T3CODE_MOBILE_RELEASE_VERSION ?? "1.1.1",
   runtimeVersion: {
     // Development manifests resolve on every launch, so avoid fingerprint's
     // expensive native-project calculation there. Preview and production stay
@@ -231,6 +231,9 @@ const config: ExpoConfig = {
     fallbackToCacheTimeout: 0,
   },
   ios: {
+    ...(repoEnv.T3CODE_MOBILE_BUILD_NUMBER
+      ? { buildNumber: repoEnv.T3CODE_MOBILE_BUILD_NUMBER }
+      : {}),
     icon: variant.assets.iosIcon,
     supportsTablet: true,
     // Multitasking-capable iPad apps cannot rotate programmatically, so the

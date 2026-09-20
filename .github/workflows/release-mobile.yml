@@ -1,0 +1,107 @@
+name: Build Mobile Release
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      ref:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    name: iOS sideload IPA
+    runs-on: macos-26
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/mobile
+    env:
+      CI: "1"
+      APP_VARIANT: production
+      EXPO_NO_DOTENV: "1"
+      T3CODE_MOBILE_UPDATES_ENABLED: "0"
+      MOBILE_VERSION_POLICY: appVersion
+      # AltStore signs the IPA on the user's machine. Omit capabilities that
+      # require a paid Apple team, including widget and share extensions.
+      T3CODE_IOS_PERSONAL_TEAM: "1"
+      T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID: com.ianworley.t3code
+      T3CODE_MOBILE_BUILD_NUMBER: ${{ github.run_number }}
+      RELEASE_VERSION: ${{ inputs.version }}
+      NODE_OPTIONS: --max-old-space-size=8192
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/mobile...
+
+      - name: Resolve iOS version
+        run: |
+          set -euo pipefail
+          # Apple accepts a numeric marketing version; keep the full nightly
+          # or prerelease version in the download filename.
+          if [[ ! "$RELEASE_VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release version: $RELEASE_VERSION" >&2
+            exit 1
+          fi
+          echo "T3CODE_MOBILE_RELEASE_VERSION=${BASH_REMATCH[1]}" >> "$GITHUB_ENV"
+
+      - name: Generate native iOS project
+        run: vp exec expo prebuild --platform ios --no-install
+
+      - name: Install CocoaPods dependencies
+        working-directory: apps/mobile/ios
+        run: pod install
+
+      - name: Archive unsigned device app
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -workspace ios/T3Code.xcworkspace \
+            -scheme T3Code \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/T3Code.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            archive
+
+      - name: Package IPA for sideloading
+        run: |
+          set -euo pipefail
+          app_path="$RUNNER_TEMP/T3Code.xcarchive/Products/Applications/T3Code.app"
+          # Release builds must contain JS and run without a Metro dev server.
+          test -s "$app_path/main.jsbundle"
+          package_dir="$RUNNER_TEMP/ios-ipa"
+          mkdir -p "$package_dir/Payload" "$RUNNER_TEMP/mobile-artifacts"
+          ditto "$app_path" "$package_dir/Payload/T3Code.app"
+          cd "$package_dir"
+          /usr/bin/zip -qry "$RUNNER_TEMP/mobile-artifacts/T3-Code-$RELEASE_VERSION-ios-unsigned.ipa" Payload
+
+      - name: Upload iOS release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: mobile-ios
+          path: ${{ runner.temp }}/mobile-artifacts/*.ipa
+          if-no-files-found: error
+          retention-days: 1
