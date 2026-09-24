@@ -42,7 +42,10 @@ export function makeRelayDeviceRegistrationRequest(
     ...(input.pushToStartToken ? { pushToStartToken: input.pushToStartToken } : {}),
     preferences: {
       liveActivitiesEnabled,
-      notificationsEnabled: pushAvailable && input.notificationsEnabled,
+      notificationsEnabled:
+        pushAvailable &&
+        input.notificationsEnabled &&
+        input.preferences.selfHostedPushEnabled !== true,
       notifyOnApproval: true,
       notifyOnInput: true,
       notifyOnCompletion: true,

@@ -313,6 +313,23 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     });
   });
 
+  it("routes ordinary alerts through self-hosted push while retaining relay Live Activities", () => {
+    const registration = makeRelayDeviceRegistrationRequest({
+      deviceId: "device-1",
+      label: "Julius's iPhone",
+      iosMajorVersion: 18,
+      pushToken: "apns-token",
+      notificationsEnabled: true,
+      preferences: {
+        selfHostedPushEnabled: true,
+        liveActivitiesEnabled: true,
+      },
+    });
+
+    expect(registration.preferences.notificationsEnabled).toBe(false);
+    expect(registration.preferences.liveActivitiesEnabled).toBe(true);
+  });
+
   it("registers the app's APNs routing so the relay targets the right bundle", () => {
     expect(
       makeRelayDeviceRegistrationRequest({

@@ -51,4 +51,14 @@ describe("ExecutionEnvironmentDescriptor", () => {
       }).capabilities.fileAttachments,
     ).toEqual({ maxUploadBytes: 50 * 1024 * 1024 });
   });
+
+  it("preserves independently available self-hosted push platforms", () => {
+    expect(decodeDescriptor(descriptor).capabilities.selfHostedPush).toBeUndefined();
+    expect(
+      decodeDescriptor({
+        ...descriptor,
+        capabilities: { ...descriptor.capabilities, selfHostedPush: { ios: true, android: false } },
+      }).capabilities.selfHostedPush,
+    ).toEqual({ ios: true, android: false });
+  });
 });

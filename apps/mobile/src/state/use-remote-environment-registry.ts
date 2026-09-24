@@ -3,7 +3,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback, useMemo } from "react";
-import { Alert } from "react-native";
+import { Alert, Platform } from "react-native";
 
 import { useConnectionController } from "../features/connection/useConnectionController";
 import { environmentPresentations } from "./presentation";
@@ -13,6 +13,14 @@ import { appAtomRegistry } from "./atom-registry";
 import type { ConnectedEnvironmentSummary, EnvironmentRuntimeState } from "./remote-runtime-types";
 import { environmentSession } from "./session";
 import { environmentCatalog } from "../connection/catalog";
+import {
+  cancelSelfHostedPushRemoval,
+  getSelfHostedPushStatus,
+  hasSelfHostedPushRegistration,
+  unregisterSelfHostedPushConnection,
+} from "../features/agent-awareness/selfHostedPush";
+import { mobilePreferencesAtom } from "./preferences";
+import { environmentServerConfigsAtom } from "./server";
 import { createRemoteEnvironmentProjectionAtoms } from "./remote-environment-projections";
 import { serverEnvironment } from "./server";
 
@@ -111,6 +119,9 @@ export function useRemoteConnectionStatus() {
 
 export function useRemoteConnections() {
   const controller = useConnectionController();
+  const { savedConnectionsById } = useSavedRemoteConnections();
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const configs = useAtomValue(environmentServerConfigsAtom);
   const connectionPairingUrl = useAtomValue(connectionPairingUrlAtom);
   const pendingConnectionError = useAtomValue(pendingConnectionErrorAtom);
   const { connectedEnvironments, connectionError, connectionState } = useRemoteConnectionStatus();
@@ -171,13 +182,44 @@ export function useRemoteConnections() {
             text: "Remove",
             style: "destructive",
             onPress: () => {
-              void controller.removeEnvironment(environmentId);
+              void (async () => {
+                const connection = savedConnectionsById[environmentId];
+                const platform =
+                  Platform.OS === "ios" || Platform.OS === "android" ? Platform.OS : null;
+                const supportsDirectPush =
+                  platform !== null &&
+                  configs.get(environmentId)?.environment.capabilities.selfHostedPush?.[
+                    platform
+                  ] === true;
+                const directPushEnabled =
+                  AsyncResult.isSuccess(preferences) &&
+                  preferences.value.selfHostedPushEnabled === true;
+                const knownRegistration = hasSelfHostedPushRegistration(environmentId);
+                if (
+                  knownRegistration ||
+                  (connection &&
+                    supportsDirectPush &&
+                    (directPushEnabled || getSelfHostedPushStatus() === "unregistration-failed"))
+                ) {
+                  try {
+                    await unregisterSelfHostedPushConnection(environmentId, connection);
+                  } catch {
+                    Alert.alert(
+                      "Could not remove environment",
+                      "This server could not remove the device's push registration. Reconnect and try again.",
+                    );
+                    return;
+                  }
+                }
+                const result = await controller.removeEnvironment(environmentId);
+                if (AsyncResult.isFailure(result)) cancelSelfHostedPushRemoval(environmentId);
+              })();
             },
           },
         ],
       );
     },
-    [connectedEnvironments, controller],
+    [connectedEnvironments, controller, savedConnectionsById, configs, preferences],
   );
 
   return {

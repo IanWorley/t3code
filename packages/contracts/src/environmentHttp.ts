@@ -408,6 +408,41 @@ export const AuthOtherClientSessionsRevokeResult = Schema.Struct({
 });
 export type AuthOtherClientSessionsRevokeResult = typeof AuthOtherClientSessionsRevokeResult.Type;
 
+export const PUSH_DEVICE_ID_MAX_LENGTH = 256;
+export const PUSH_TOKEN_MAX_LENGTH = 4_096;
+
+const PushDeviceId = Schema.String.check(
+  Schema.isTrimmed(),
+  Schema.isNonEmpty(),
+  Schema.isMaxLength(PUSH_DEVICE_ID_MAX_LENGTH),
+);
+
+export const EnvironmentPushPlatform = Schema.Literals(["ios", "android"]);
+export type EnvironmentPushPlatform = typeof EnvironmentPushPlatform.Type;
+
+export const EnvironmentPushRegisterDeviceRequest = Schema.Struct({
+  deviceId: PushDeviceId,
+  platform: EnvironmentPushPlatform,
+  token: Schema.String.check(
+    Schema.isTrimmed(),
+    Schema.isNonEmpty(),
+    Schema.isMaxLength(PUSH_TOKEN_MAX_LENGTH),
+  ),
+}).check(
+  Schema.makeFilter((device) => device.platform !== "ios" || /^[0-9a-fA-F]+$/.test(device.token)),
+);
+export type EnvironmentPushRegisterDeviceRequest = typeof EnvironmentPushRegisterDeviceRequest.Type;
+
+export const EnvironmentPushRegisterDeviceResult = Schema.Struct({
+  registered: Schema.Boolean,
+});
+export type EnvironmentPushRegisterDeviceResult = typeof EnvironmentPushRegisterDeviceResult.Type;
+
+export const EnvironmentPushRemoveDeviceResult = Schema.Struct({
+  removed: Schema.Boolean,
+});
+export type EnvironmentPushRemoveDeviceResult = typeof EnvironmentPushRemoveDeviceResult.Type;
+
 class EnvironmentMetadataHttpApi extends HttpApiGroup.make("metadata").add(
   HttpApiEndpoint.get("descriptor", "/.well-known/t3/environment", {
     success: ExecutionEnvironmentDescriptor,
@@ -553,6 +588,24 @@ class EnvironmentPullRequestsHttpApi extends HttpApiGroup.make("pullRequests").a
   }).middleware(EnvironmentAuthenticatedAuth),
 ) {}
 
+export class EnvironmentPushHttpApi extends HttpApiGroup.make("push")
+  .add(
+    HttpApiEndpoint.post("registerDevice", "/api/push/devices", {
+      headers: OptionalBearerHeaders,
+      payload: EnvironmentPushRegisterDeviceRequest,
+      success: EnvironmentPushRegisterDeviceResult,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.delete("removeDevice", "/api/push/devices/:deviceId", {
+      headers: OptionalBearerHeaders,
+      params: Schema.Struct({ deviceId: PushDeviceId }),
+      success: EnvironmentPushRemoveDeviceResult,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  ) {}
+
 class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
   .add(
     HttpApiEndpoint.post("linkProof", "/api/connect/link-proof", {
@@ -619,4 +672,5 @@ export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentAuthHttpApi)
   .add(EnvironmentOrchestrationHttpApi)
   .add(EnvironmentPullRequestsHttpApi)
+  .add(EnvironmentPushHttpApi)
   .add(EnvironmentConnectHttpApi) {}

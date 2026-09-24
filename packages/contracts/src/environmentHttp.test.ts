@@ -1,9 +1,12 @@
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   EnvironmentAuthInvalidError,
   EnvironmentInternalError,
   EnvironmentOperationForbiddenError,
+  EnvironmentPushRegisterDeviceRequest,
+  PUSH_DEVICE_ID_MAX_LENGTH,
   EnvironmentRequestInvalidError,
   EnvironmentResourceNotFoundError,
   EnvironmentScopeRequiredError,
@@ -58,5 +61,20 @@ describe("environment HTTP errors", () => {
     errors.forEach((error, index) => {
       expect(error.message).toContain(details[index]);
     });
+  });
+});
+
+describe("push device registration request", () => {
+  const isRequest = Schema.is(EnvironmentPushRegisterDeviceRequest);
+
+  it("accepts platform tokens and rejects empty or oversized device identities", () => {
+    const request = { deviceId: "phone-1", platform: "ios", token: "aabb0011" };
+    expect(isRequest(request)).toBe(true);
+    expect(isRequest({ ...request, token: "apns-token" })).toBe(false);
+    expect(isRequest({ ...request, deviceId: "" })).toBe(false);
+    expect(isRequest({ ...request, deviceId: "x".repeat(PUSH_DEVICE_ID_MAX_LENGTH + 1) })).toBe(
+      false,
+    );
+    expect(isRequest({ ...request, token: "" })).toBe(false);
   });
 });

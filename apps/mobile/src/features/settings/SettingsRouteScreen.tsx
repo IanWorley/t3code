@@ -21,12 +21,17 @@ import {
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { supportsAgentAwarenessPush } from "../agent-awareness/capabilities";
+import {
+  getSelfHostedPushStatus,
+  subscribeSelfHostedPushStatus,
+} from "../agent-awareness/selfHostedPush";
 import { setLiveActivityUpdatesEnabled } from "../agent-awareness/liveActivityPreferences";
 import { requestAgentNotificationPermission } from "../agent-awareness/notificationPermissions";
 import {
   getAgentAwarenessRegistrationStatus,
   refreshAgentAwarenessRegistration,
   subscribeAgentAwarenessRegistrationStatus,
+  updateAgentAwarenessRegistrationPreferences,
 } from "../agent-awareness/remoteRegistration";
 import { refreshManagedRelayEnvironments } from "../cloud/managedRelayState";
 import { hasCloudPublicConfig, resolveRelayClerkTokenOptions } from "../cloud/publicConfig";
@@ -35,6 +40,7 @@ import { WorkspaceSidebarToolbar } from "../layout/workspace-sidebar-toolbar";
 import { runtime } from "../../lib/runtime";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { serverEnvironment } from "../../state/server";
+import { environmentServerConfigsAtom } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironments } from "../../state/environments";
 import {
@@ -132,6 +138,7 @@ function LocalSettingsRouteScreen() {
             value={`${environmentCount}`}
             target="SettingsEnvironments"
           />
+          <SelfHostedPushSettingsRow />
         </SettingsSection>
 
         <GeneralSettingsSection />
@@ -147,6 +154,115 @@ function LocalSettingsRouteScreen() {
         <AppSettingsSection />
       </ScrollView>
     </View>
+  );
+}
+
+function SelfHostedPushSettingsRow() {
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
+  const configs = useAtomValue(environmentServerConfigsAtom);
+  const { savedConnectionsById } = useSavedRemoteConnections();
+  const status = useSyncExternalStore(
+    subscribeSelfHostedPushStatus,
+    getSelfHostedPushStatus,
+    () => "disabled" as const,
+  );
+  const enabled = AsyncResult.isSuccess(preferences)
+    ? preferences.value.selfHostedPushEnabled === true
+    : false;
+  const platform = Platform.OS === "ios" || Platform.OS === "android" ? Platform.OS : null;
+  const cloudConfigured = hasCloudPublicConfig();
+  const available =
+    supportsAgentAwarenessPush() &&
+    platform !== null &&
+    Object.values(savedConnectionsById).some(
+      (connection) =>
+        connection.bearerToken !== null &&
+        connection.authenticationMethod !== "dpop" &&
+        connection.relayManaged !== true &&
+        configs.get(connection.environmentId)?.environment.capabilities.selfHostedPush?.[
+          platform
+        ] === true,
+    );
+  const subtitle =
+    status === "unregistration-failed"
+      ? "Could not remove the server registration; reconnect to retry"
+      : !available
+        ? enabled
+          ? cloudConfigured
+            ? "No server supports direct alerts; T3 Connect alerts are off"
+            : "No connected server currently supports direct notifications"
+          : "Connect a server with self-hosted push configured"
+        : status === "registered"
+          ? cloudConfigured
+            ? "Direct alerts arrive when closed; T3 Connect alerts are off"
+            : "Direct alerts arrive when the app is closed"
+          : status === "registration-failed"
+            ? "Registration failed; reconnect or reopen the app to retry"
+            : status === "permission-needed"
+              ? "Allow notifications in system Settings"
+              : status === "registering"
+                ? "Registering this device"
+                : cloudConfigured
+                  ? "Replaces T3 Connect alerts; servers without push will not alert"
+                  : "Uses your server's own Apple or Google push credentials";
+
+  const onValueChange = useCallback(
+    (next: boolean) => {
+      if (!next) {
+        savePreferences({ selfHostedPushEnabled: false });
+        if (cloudConfigured) {
+          void runtime.runPromiseExit(
+            updateAgentAwarenessRegistrationPreferences({ selfHostedPushEnabled: false }),
+          );
+        }
+        return;
+      }
+      void (async () => {
+        const result = await settleAsyncResult(() =>
+          runtime.runPromiseExit(requestAgentNotificationPermission),
+        );
+        if (result._tag === "Failure") {
+          const error = squashAtomCommandFailure(result);
+          Alert.alert(
+            "Notifications unavailable",
+            error instanceof Error ? error.message : "Could not request notification permission.",
+          );
+          return;
+        }
+        if (result.value.type === "granted") {
+          savePreferences({ selfHostedPushEnabled: true });
+          if (cloudConfigured) {
+            void runtime.runPromiseExit(
+              updateAgentAwarenessRegistrationPreferences({ selfHostedPushEnabled: true }),
+            );
+          }
+          return;
+        }
+        if (result.value.type === "denied" && !result.value.canAskAgain) {
+          Alert.alert(
+            "Notifications disabled",
+            "Allow notifications for this app in system Settings, then try again.",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Open Settings", onPress: () => void Linking.openSettings() },
+            ],
+          );
+        }
+      })();
+    },
+    [cloudConfigured, savePreferences],
+  );
+
+  return (
+    <SettingsSwitchRow
+      icon="bell.badge"
+      label="Self-Hosted Notifications"
+      subtitle={subtitle}
+      disabled={(!available && !enabled) || !AsyncResult.isSuccess(preferences)}
+      value={enabled}
+      onValueChange={onValueChange}
+    />
   );
 }
 
@@ -166,6 +282,9 @@ function ConfiguredSettingsRouteScreen() {
   const { savedConnectionsById } = useSavedRemoteConnections();
   const [notificationStatus, setNotificationStatus] = useState<NotificationStatus>("checking");
   const [liveActivityStatus, setLiveActivityStatus] = useState<LiveActivityStatus>("checking");
+  const selfHostedPushEnabled = AsyncResult.isSuccess(preferencesResult)
+    ? preferencesResult.value.selfHostedPushEnabled === true
+    : false;
   const deviceRegistered = useDeviceRegistered();
   const liveActivitiesPreferenceEnabled = AsyncResult.isSuccess(preferencesResult)
     ? preferencesResult.value.liveActivitiesEnabled !== false
@@ -514,21 +633,30 @@ function ConfiguredSettingsRouteScreen() {
             value={`${environmentCount}`}
             target="SettingsEnvironments"
           />
+          <SelfHostedPushSettingsRow />
           <SettingsSwitchRow
             icon="bell.badge"
             label="Device Notifications"
             disabled={
               !agentAwarenessPlatform.supported ||
               !agentAwarenessPushAvailable ||
+              selfHostedPushEnabled ||
               notificationStatus === "checking" ||
               notificationStatus === "unsupported"
             }
-            subtitle={agentAwarenessSubtitle}
+            subtitle={
+              selfHostedPushEnabled
+                ? "Direct notifications replace T3 Connect alerts on this device"
+                : agentAwarenessSubtitle
+            }
             // Only reads as on when this device is actually registered with the
             // relay; otherwise notifications cannot be delivered regardless of
             // the local iOS permission.
             value={
-              agentAwarenessPushAvailable && notificationStatus === "enabled" && deviceRegistered
+              agentAwarenessPushAvailable &&
+              !selfHostedPushEnabled &&
+              notificationStatus === "enabled" &&
+              deviceRegistered
             }
             onValueChange={handleDeviceNotificationsChange}
           />

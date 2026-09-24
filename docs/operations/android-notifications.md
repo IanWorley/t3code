@@ -2,6 +2,8 @@
 
 The Android app receives Firebase Cloud Messaging (FCM) data messages. The relay sends them directly through FCM HTTP v1; an Expo Push account is not required.
 
+For alerts without T3 Connect, use the [self-hosted push setup](../user/mobile-notifications.md#use-your-own-push-credentials). The procedures below cover the T3 Connect native handler and relay.
+
 ## Android compatibility and automated checks
 
 The app's minimum is Android 7.0 (API 24), declared in `app.config.ts` and enforced by the relay's device-registration schema. Compile/target SDK versions follow the locked Expo/React Native toolchain (currently API 36). Notification channels begin at API 26; the notification permission prompt begins at API 33. Live Update promotion requires API 36 and remains subject to system settings and device support. Alerts and ordinary activity cards work below API 36.
