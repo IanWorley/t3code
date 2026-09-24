@@ -26,6 +26,22 @@ describe("VibeProxy settings", () => {
     expect(decodeServerSettings({}).vibeProxy).toEqual({
       url: DEFAULT_VIBEPROXY_URL,
       apiKey: { value: "" },
+      manager: { mode: "external" },
+    });
+  });
+
+  it("decodes managed settings with auto-start off by default", () => {
+    expect(
+      decodeServerSettings({
+        vibeProxy: {
+          manager: { mode: "managed", binaryPath: "/bin/proxy", configPath: "/etc/proxy.yaml" },
+        },
+      }).vibeProxy.manager,
+    ).toEqual({
+      mode: "managed",
+      binaryPath: "/bin/proxy",
+      configPath: "/etc/proxy.yaml",
+      autoStart: false,
     });
   });
 

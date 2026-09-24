@@ -11,6 +11,7 @@ import {
   AuthEnvironmentBootstrapTokenType,
   AuthTokenExchangeGrantType,
   CommandId,
+  CliProxyManagementError,
   DEFAULT_SERVER_SETTINGS,
   type DpopFailureReason,
   EnvironmentId,
@@ -105,6 +106,7 @@ const encodeTestJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unk
 
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as ServerConfig from "./config.ts";
+import * as CliProxyManager from "./cliProxy/CliProxyManager.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import { HTTP_ROUTER_CONFIG, makeRoutesLayer } from "./server.ts";
 import {
@@ -519,6 +521,7 @@ const buildAppUnderTest = (options?: {
     providerInstanceRegistry?: Partial<ProviderInstanceRegistry["Service"]>;
     antigravityInstallation?: Partial<AntigravityInstallation["Service"]>;
     serverSettings?: Partial<ServerSettings.ServerSettingsService["Service"]>;
+    cliProxyManager?: Partial<CliProxyManager.CliProxyManager["Service"]>;
     externalLauncher?: Partial<ExternalLauncher.ExternalLauncher["Service"]>;
     vcsDriver?: Partial<VcsDriver.VcsDriver["Service"]>;
     vcsDriverRegistry?: Partial<VcsDriverRegistry.VcsDriverRegistry["Service"]>;
@@ -834,6 +837,13 @@ const buildAppUnderTest = (options?: {
       ),
       Layer.provide(
         Layer.mergeAll(
+          Layer.mock(CliProxyManager.CliProxyManager)({
+            status: Effect.succeed({ state: "stopped" as const }),
+            changes: Stream.make({ state: "stopped" as const }),
+            control: () => Effect.succeed({ state: "stopped" as const }),
+            reconcileSettings: Effect.void,
+            ...options?.layers?.cliProxyManager,
+          }),
           Layer.mock(ExternalLauncher.ExternalLauncher)({
             resolveAvailableEditors: () => Effect.succeed([]),
             resolveFileManagerRevealKind: () => Effect.sync((): undefined => undefined),
@@ -5835,6 +5845,95 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         failureMessage.includes("Unauthorized") ||
           failureMessage.includes("An error occurred during Open"),
       );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect(
+    "lets read-only clients observe CLIProxyAPI status but requires operate scope to control it",
+    () =>
+      Effect.gen(function* () {
+        let controls = 0;
+        yield* buildAppUnderTest({
+          layers: {
+            cliProxyManager: {
+              changes: Stream.make({ state: "stopped" as const }),
+              control: () =>
+                Effect.sync(() => {
+                  controls += 1;
+                  return { state: "running" as const, pid: 77 };
+                }),
+            },
+          },
+        });
+        const token = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
+          scope: "orchestration:read",
+        });
+        const ticketResponse = yield* HttpClient.post("/api/auth/websocket-ticket", {
+          headers: { authorization: `Bearer ${token.body.access_token ?? ""}` },
+        });
+        const { ticket } = yield* responseJsonEffect<{ readonly ticket: string }>(ticketResponse);
+        const readOnlyUrl = `${yield* getWsServerUrl("/ws", { authenticated: false })}?wsTicket=${encodeURIComponent(ticket)}`;
+        yield* Effect.scoped(
+          withWsRpcClient(readOnlyUrl, (client) =>
+            Effect.gen(function* () {
+              const config = yield* client[WS_METHODS.serverGetConfig]({});
+              assert.equal(config.cliProxyManagement, true);
+              const status = yield* client[WS_METHODS.subscribeCliProxyStatus]({}).pipe(
+                Stream.runHead,
+                Effect.map(Option.getOrThrow),
+              );
+              assert.deepEqual(status, { state: "stopped" });
+              const error = yield* client[WS_METHODS.serverControlCliProxy]({
+                action: "start",
+              }).pipe(Effect.flip);
+              assert.equal(error._tag, "EnvironmentAuthorizationError");
+              if (error._tag === "EnvironmentAuthorizationError") {
+                assert.equal(error.requiredScope, "orchestration:operate");
+              }
+            }),
+          ),
+        );
+        assert.equal(controls, 0);
+        const controlled = yield* Effect.scoped(
+          withWsRpcClient(yield* getWsServerUrl("/ws"), (client) =>
+            client[WS_METHODS.serverControlCliProxy]({ action: "start" }),
+          ),
+        );
+        assert.deepEqual(controlled, { state: "running", pid: 77 });
+        assert.equal(controls, 1);
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("returns a process stop failure after a managed settings save", () =>
+    Effect.gen(function* () {
+      let saved = false;
+      yield* buildAppUnderTest({
+        layers: {
+          serverSettings: {
+            updateSettings: () =>
+              Effect.sync(() => {
+                saved = true;
+                return DEFAULT_SERVER_SETTINGS;
+              }),
+          },
+          cliProxyManager: {
+            reconcileSettings: Effect.fail(
+              new CliProxyManagementError({
+                message: "CLIProxyAPI did not stop.",
+              }),
+            ),
+          },
+        },
+      });
+      const error = yield* Effect.scoped(
+        withWsRpcClient(yield* getWsServerUrl("/ws"), (client) =>
+          client[WS_METHODS.serverUpdateSettings]({
+            patch: { vibeProxy: { manager: { mode: "external" } } },
+          }).pipe(Effect.flip),
+        ),
+      );
+      assert.equal(saved, true);
+      assert.equal(error._tag, "CliProxyManagementError");
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

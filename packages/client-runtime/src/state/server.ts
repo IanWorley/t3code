@@ -965,6 +965,15 @@ export function createServerEnvironmentAtoms<R, E>(
     updateStateAtom,
     settingsValueAtom,
     providersValueAtom,
+    cliProxyStatus: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:cli-proxy-status",
+      tag: WS_METHODS.subscribeCliProxyStatus,
+      idleTtlMs: 0,
+    }),
+    controlCliProxy: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:control-cli-proxy",
+      tag: WS_METHODS.serverControlCliProxy,
+    }),
     providerAuthState: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:provider:auth-state",
       tag: WS_METHODS.providerAuthSubscribe,

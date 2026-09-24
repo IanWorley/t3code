@@ -82,6 +82,7 @@ import { Switch } from "../ui/switch";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { CliProxyManagerSettings } from "./CliProxyManagerSettings";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
 import { ExpandableText } from "./ExpandableText";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
@@ -1143,6 +1144,12 @@ export function EnvironmentProviderSettings({
               </div>
             </label>
           </div>
+
+          <CliProxyManagerSettings
+            environmentId={environmentId}
+            manager={settings.vibeProxy.manager}
+            readOnly={readOnly}
+          />
 
           <div className="mt-4 border-t border-border/70 pt-3">
             <div className="mb-2 text-xs font-medium text-foreground">Use VibeProxy with</div>

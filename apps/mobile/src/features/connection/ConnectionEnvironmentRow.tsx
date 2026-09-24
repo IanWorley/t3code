@@ -16,6 +16,7 @@ import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";
 import { serverEnvironment } from "../../state/server";
+import { CliProxyControls } from "./CliProxyControls";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
 
 function connectionStatusLabel(environment: ConnectedEnvironmentSummary): string | null {
@@ -189,6 +190,11 @@ export function ConnectionEnvironmentRow(props: {
               </View>
             </>
           )}
+
+          {serverConfig?.cliProxyManagement === true &&
+          props.environment.connectionState === "connected" ? (
+            <CliProxyControls environmentId={props.environment.environmentId} />
+          ) : null}
 
           <View className="flex-row justify-end gap-2">
             {props.environment.isRelayManaged ? null : (
