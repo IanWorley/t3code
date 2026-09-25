@@ -1316,6 +1316,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       assert.deepEqual(next.vibeProxy, {
         url: "https://proxy.example.test",
         apiKey: { value: "vp-secret", valueRedacted: true },
+        manager: { mode: "external" },
       });
 
       const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
@@ -1334,6 +1335,25 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         value: "",
         valueRedacted: true,
       });
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("persists managed CLIProxyAPI process settings", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const manager = {
+        mode: "managed" as const,
+        binaryPath: "/usr/local/bin/cli-proxy-api",
+        configPath: "/etc/cli-proxy-api.yaml",
+        autoStart: true,
+      };
+      const updated = yield* serverSettings.updateSettings({ vibeProxy: { manager } });
+      assert.deepEqual(updated.vibeProxy.manager, manager);
+      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
+      assert.deepEqual(JSON.parse(raw).vibeProxy.manager, manager);
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 

@@ -1004,9 +1004,23 @@ export const VibeProxyApiKeySetting = Schema.Struct({
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type VibeProxyApiKeySetting = typeof VibeProxyApiKeySetting.Type;
 
+export const CliProxyManagerSettings = Schema.Union([
+  Schema.Struct({ mode: Schema.Literal("external") }),
+  Schema.Struct({
+    mode: Schema.Literal("managed"),
+    binaryPath: TrimmedString,
+    configPath: TrimmedString,
+    autoStart: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  }),
+]);
+export type CliProxyManagerSettings = typeof CliProxyManagerSettings.Type;
+
 export const VibeProxySettings = Schema.Struct({
   url: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_VIBEPROXY_URL))),
   apiKey: VibeProxyApiKeySetting,
+  manager: CliProxyManagerSettings.pipe(
+    Schema.withDecodingDefault(Effect.succeed({ mode: "external" as const })),
+  ),
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type VibeProxySettings = typeof VibeProxySettings.Type;
 
@@ -1483,6 +1497,7 @@ export const ServerSettingsPatch = Schema.Struct({
           valueRedacted: Schema.optionalKey(Schema.Boolean),
         }),
       ),
+      manager: Schema.optionalKey(CliProxyManagerSettings),
     }),
   ),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
