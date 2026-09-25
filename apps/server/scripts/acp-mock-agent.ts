@@ -799,7 +799,7 @@ const program = Effect.gen(function* () {
           sessionId: requestedSessionId,
           update: {
             sessionUpdate: "agent_message_chunk",
-            content: { type: "text", text: "hello from " },
+            content: { type: "text", text: "hello from" },
           },
         });
 
@@ -841,13 +841,15 @@ const program = Effect.gen(function* () {
           });
         }
 
-        writeJsonRpcNotification("session/update", {
-          sessionId: requestedSessionId,
-          update: {
-            sessionUpdate: "agent_message_chunk",
-            content: { type: "text", text: "mock" },
-          },
-        });
+        for (const text of [" ", "mo", "ck"]) {
+          writeJsonRpcNotification("session/update", {
+            sessionId: requestedSessionId,
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              content: { type: "text", text },
+            },
+          });
+        }
 
         return yield* Effect.never;
       }
@@ -1378,6 +1380,16 @@ const program = Effect.gen(function* () {
           ],
         },
       });
+
+      if (process.env.T3_ACP_EMIT_THOUGHT === "1") {
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "agent_thought_chunk",
+            content: { type: "text", text: "thinking from mock" },
+          },
+        });
+      }
 
       yield* agent.client.sessionUpdate({
         sessionId: requestedSessionId,

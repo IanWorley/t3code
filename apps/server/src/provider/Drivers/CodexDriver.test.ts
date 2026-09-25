@@ -17,7 +17,7 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
-import { layerTest as codexResetCreditLayerTest } from "../Layers/codexResetCredit.ts";
+import * as ResetCreditCoordinator from "../Layers/resetCreditCoordinator.ts";
 import { NoOpProviderEventLoggers, ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import * as ModelManifest from "../ModelManifest.ts";
 import {
@@ -33,7 +33,7 @@ const testLayer = ServerConfig.layerTest(process.cwd(), {
   Layer.provideMerge(NodeServices.layer),
   Layer.provideMerge(ServerSettingsService.layerTest()),
   Layer.provideMerge(ModelManifest.layerTest),
-  Layer.provideMerge(codexResetCreditLayerTest),
+  Layer.provideMerge(ResetCreditCoordinator.layerTest),
   Layer.provideMerge(
     Layer.mock(BackgroundPolicy.BackgroundPolicy)({
       shouldRunScopeWork: () => Effect.succeed(false),
@@ -56,6 +56,36 @@ const noSpawn = ChildProcessSpawner.make(() =>
 );
 
 it.layer(testLayer)("CodexDriver", (it) => {
+  it.effect.skipIf(windowsHost)(
+    "does not pass the global proxy key to a direct Codex process",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const settings = yield* ServerSettingsService;
+        yield* settings.updateSettings({ vibeProxy: { apiKey: { value: "proxy-only-secret" } } });
+        const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-codex-direct-" });
+        const binaryPath = NodePath.join(tempDir, "codex");
+        const capturedKeyPath = NodePath.join(tempDir, "captured-key");
+        yield* fs.writeFileString(
+          binaryPath,
+          `#!/bin/sh
+printf '%s' "$T3CODE_VIBEPROXY_API_KEY" > '${capturedKeyPath}'
+printf 'codex-cli 0.156.0\n'
+`,
+        );
+        yield* fs.chmod(binaryPath, 0o755);
+        const instance = yield* CodexDriver.create({
+          instanceId: ProviderInstanceId.make("codex-direct"),
+          displayName: "Direct Codex",
+          enabled: true,
+          vibeProxy: { enabled: false },
+          environment: [],
+          config: { ...CodexDriver.defaultConfig(), binaryPath, homePath: tempDir },
+        });
+        yield* instance.snapshot.refresh;
+        expect(yield* fs.readFileString(capturedKeyPath)).toBe("");
+      }).pipe(Effect.scoped),
+  );
   it.effect.skipIf(windowsHost)(
     "runs the standalone updater against the shared home, not the shadow home",
     () =>

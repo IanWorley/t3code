@@ -119,6 +119,10 @@ export interface CursorAdapterLiveOptions {
    * the latest snapshot so the closure isn't stale.
    */
   readonly resolveSettings?: Effect.Effect<CursorSettings>;
+  readonly onAvailableCommands?: (
+    commands: ReadonlyArray<EffectAcpSchema.AvailableCommand>,
+    cwd: string,
+  ) => Effect.Effect<void>;
 }
 
 export interface CoreAcpAdapterDefinition<Settings> {
@@ -160,6 +164,10 @@ export interface CoreAcpAdapterDefinition<Settings> {
 }
 
 export interface CoreAcpAdapterOptions {
+  readonly onAvailableCommands?: (
+    commands: ReadonlyArray<EffectAcpSchema.AvailableCommand>,
+    cwd: string,
+  ) => Effect.Effect<void>;
   readonly environment?: NodeJS.ProcessEnv;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
@@ -858,6 +866,11 @@ export function makeCoreAcpAdapter<Settings>(
                     return;
                   case "ModeChanged":
                     return;
+                  case "AvailableCommandsUpdated":
+                    yield* (
+                      options?.onAvailableCommands?.(event.availableCommands, cwd) ?? Effect.void
+                    );
+                    return;
                   case "AssistantItemStarted":
                     ctx.assistantReply = new CursorTransportFailure();
                     yield* offerRuntimeEvent(
@@ -912,6 +925,27 @@ export function makeCoreAcpAdapter<Settings>(
                         threadId: ctx.threadId,
                         turnId: ctx.activeTurnId,
                         toolCall: event.toolCall,
+                        rawPayload: event.rawPayload,
+                      }),
+                    );
+                    return;
+                  case "ThoughtDelta":
+                    // Thoughts are narration, not the reply: they stay out of
+                    // `assistantReply` so a resumed turn replays only answers.
+                    yield* logNative(
+                      ctx.threadId,
+                      "session/update",
+                      event.rawPayload,
+                      "acp.jsonrpc",
+                    );
+                    yield* offerRuntimeEvent(
+                      makeAcpContentDeltaEvent({
+                        stamp: yield* makeEventStamp(),
+                        provider,
+                        threadId: ctx.threadId,
+                        turnId: ctx.activeTurnId,
+                        streamKind: "reasoning_text",
+                        text: event.text,
                         rawPayload: event.rawPayload,
                       }),
                     );
@@ -1109,16 +1143,19 @@ export function makeCoreAcpAdapter<Settings>(
             });
           }
 
-          // ACP has no system-message field; keep runtime context separate from the user's text.
+          // ACP commands parse the complete text. Extra context can turn an exact
+          // command into an ordinary model prompt or change its arguments.
           const result = yield* ctx.acp
             .prompt({
-              prompt: [
-                ...promptParts,
-                {
-                  type: "text",
-                  text: buildRuntimeInstructions({ harness: "Cursor", model: resolvedModel }),
-                },
-              ],
+              prompt: /^\/[^\s/]+(?:\s|$)/.test(rawPrompt)
+                ? promptParts
+                : [
+                    ...promptParts,
+                    {
+                      type: "text",
+                      text: buildRuntimeInstructions({ harness: "Cursor", model: resolvedModel }),
+                    },
+                  ],
             })
             .pipe(
               Effect.mapError((error) =>

@@ -6,7 +6,13 @@ import * as NodeURL from "node:url";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { ApprovalRequestId, KiroSettings, ProviderDriverKind, ThreadId } from "@t3tools/contracts";
+import {
+  ApprovalRequestId,
+  KiroSettings,
+  ProviderDriverKind,
+  type ProviderRuntimeEvent,
+  ThreadId,
+} from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -177,6 +183,48 @@ it.effect("KiroAdapter returns Kiro's advertised ACP permission option ID", () =
       ServerConfig.layerTest(process.cwd(), {
         prefix: "t3code-kiro-permission-test-",
       }),
+    ),
+    Effect.scoped,
+    Effect.provide(NodeServices.layer),
+  ),
+);
+
+it.effect("KiroAdapter delivers reasoning and the complete answer before completing the turn", () =>
+  Effect.gen(function* () {
+    const platform = yield* HostProcessPlatform;
+    const wrapperPath = yield* Effect.promise(() =>
+      makeMockAgentWrapper(platform, { T3_ACP_EMIT_THOUGHT: "1" }),
+    );
+    const adapter = yield* makeKiroAdapter(
+      decodeKiroSettings({ enabled: true, binaryPath: wrapperPath }),
+    );
+    const threadId = ThreadId.make("kiro-reasoning-thread");
+    const completed = yield* Deferred.make<void>();
+    const events: ProviderRuntimeEvent[] = [];
+    yield* Stream.runForEach(adapter.streamEvents, (event) => {
+      events.push(event);
+      return event.type === "turn.completed" ? Deferred.succeed(completed, undefined) : Effect.void;
+    }).pipe(Effect.forkChild);
+    yield* adapter.startSession({
+      threadId,
+      provider: ProviderDriverKind.make("kiro"),
+      cwd: process.cwd(),
+      runtimeMode: "full-access",
+    });
+    yield* adapter.sendTurn({ threadId, input: "hello", attachments: [] });
+    yield* Deferred.await(completed);
+    const deltas = events.filter((event) => event.type === "content.delta");
+    assert.deepStrictEqual(
+      deltas.map((event) => event.payload),
+      [
+        { streamKind: "reasoning_text", delta: "thinking from mock" },
+        { streamKind: "assistant_text", delta: "hello from mock" },
+      ],
+    );
+    assert.equal(events.at(-1)?.type, "turn.completed");
+  }).pipe(
+    Effect.provide(
+      ServerConfig.layerTest(process.cwd(), { prefix: "t3code-kiro-reasoning-test-" }),
     ),
     Effect.scoped,
     Effect.provide(NodeServices.layer),

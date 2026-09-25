@@ -241,6 +241,7 @@ export const makeKiroTextGeneration = Effect.fn("makeKiroTextGeneration")(functi
         message: input.message,
         previousTitle: input.previousTitle,
         attachments: input.attachments,
+        linkedContext: input.linkedContext,
       });
 
       const generated = yield* runKiroJson({
@@ -253,6 +254,7 @@ export const makeKiroTextGeneration = Effect.fn("makeKiroTextGeneration")(functi
 
       return {
         title: sanitizeThreadTitle(generated.title),
+        ...(generated.needsRefinement ? { needsRefinement: true } : {}),
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
