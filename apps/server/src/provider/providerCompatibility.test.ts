@@ -65,6 +65,27 @@ describe("provider compatibility", () => {
     }
   });
 
+  it.each([
+    ["kiro", "2.24.0"],
+    ["pi", "0.0.33"],
+  ])("recommends the provisional %s baseline", (driver, baseline) => {
+    for (const version of [baseline, null, "99.0.0", `${baseline}-beta.1`]) {
+      assert.deepEqual(
+        resolveProviderCompatibility(
+          ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility,
+          ProviderDriverKind.make(driver),
+          version,
+        ),
+        {
+          status: version === baseline ? "supported" : "unknown",
+          message: null,
+          recommendedVersion: baseline,
+          recommendedRange: null,
+        },
+      );
+    }
+  });
+
   it("supports Codex 0.156 and marks Codex without Thread.projectId broken", () => {
     const bundled = ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility;
     for (const [t3CodeVersion, codexVersion, expected] of [
