@@ -65,6 +65,24 @@ describe("provider compatibility", () => {
     }
   });
 
+  it.each(["kiro", "pi"])("reports unverified %s versions without a recommendation", (driver) => {
+    for (const version of [null, "1.0.0", "99.0.0", "1.0.0-beta.1"]) {
+      assert.deepEqual(
+        resolveProviderCompatibility(
+          ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility,
+          ProviderDriverKind.make(driver),
+          version,
+        ),
+        {
+          status: "unknown",
+          message: null,
+          recommendedVersion: null,
+          recommendedRange: null,
+        },
+      );
+    }
+  });
+
   it("supports Codex 0.156 and marks Codex without Thread.projectId broken", () => {
     const bundled = ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility;
     for (const [t3CodeVersion, codexVersion, expected] of [
