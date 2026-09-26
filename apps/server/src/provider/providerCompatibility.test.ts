@@ -65,8 +65,11 @@ describe("provider compatibility", () => {
     }
   });
 
-  it.each(["kiro", "pi"])("reports unverified %s versions without a recommendation", (driver) => {
-    for (const version of [null, "1.0.0", "99.0.0", "1.0.0-beta.1"]) {
+  it.each([
+    ["kiro", "2.24.0"],
+    ["pi", "0.0.33"],
+  ])("recommends the provisional %s baseline", (driver, baseline) => {
+    for (const version of [baseline, null, "99.0.0", `${baseline}-beta.1`]) {
       assert.deepEqual(
         resolveProviderCompatibility(
           ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility,
@@ -74,9 +77,9 @@ describe("provider compatibility", () => {
           version,
         ),
         {
-          status: "unknown",
+          status: version === baseline ? "supported" : "unknown",
           message: null,
-          recommendedVersion: null,
+          recommendedVersion: baseline,
           recommendedRange: null,
         },
       );
