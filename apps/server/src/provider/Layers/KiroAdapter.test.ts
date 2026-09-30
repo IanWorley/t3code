@@ -10,6 +10,7 @@ import {
   ApprovalRequestId,
   KiroSettings,
   ProviderDriverKind,
+  ProviderInstanceId,
   type ProviderRuntimeEvent,
   ThreadId,
 } from "@t3tools/contracts";
@@ -226,6 +227,65 @@ it.effect("KiroAdapter delivers reasoning and the complete answer before complet
     Effect.provide(
       ServerConfig.layerTest(process.cwd(), { prefix: "t3code-kiro-reasoning-test-" }),
     ),
+    Effect.scoped,
+    Effect.provide(NodeServices.layer),
+  ),
+);
+
+it.effect("KiroAdapter switches to the planner for plan turns and back to the starting agent", () =>
+  Effect.gen(function* () {
+    const platform = yield* HostProcessPlatform;
+    const requestLogPath = NodePath.join(
+      yield* Effect.promise(() => NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "kiro-modes-"))),
+      "requests.ndjson",
+    );
+    // Kiro advertises its agents only through `modes` and rejects set_config_option.
+    const wrapperPath = yield* Effect.promise(() =>
+      makeMockAgentWrapper(platform, {
+        T3_ACP_OMIT_CONFIG_OPTIONS: "1",
+        T3_ACP_REQUEST_LOG_PATH: requestLogPath,
+      }),
+    );
+    const adapter = yield* makeKiroAdapter(
+      decodeKiroSettings({ enabled: true, binaryPath: wrapperPath }),
+    );
+    const threadId = ThreadId.make("kiro-mode-thread");
+    // The mock rejects Kiro's implicit `auto` model on follow-up turns.
+    const modelSelection = { instanceId: ProviderInstanceId.make("kiro"), model: "grok-4.6" };
+    yield* adapter.startSession({
+      threadId,
+      provider: ProviderDriverKind.make("kiro"),
+      cwd: process.cwd(),
+      runtimeMode: "approval-required",
+      modelSelection,
+    });
+    yield* adapter.sendTurn({
+      threadId,
+      input: "plan it",
+      attachments: [],
+      interactionMode: "plan",
+      modelSelection,
+    });
+    yield* adapter.sendTurn({ threadId, input: "build it", attachments: [], modelSelection });
+
+    const requests = (yield* Effect.promise(() => NodeFSP.readFile(requestLogPath, "utf8")))
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line) as { method?: string; params?: { modeId?: string } });
+    assert.deepStrictEqual(
+      requests
+        .filter(
+          (request) =>
+            request.method === "session/set_mode" || request.method === "session/set_config_option",
+        )
+        .map((request) => [request.method, request.params?.modeId]),
+      [
+        ["session/set_mode", "architect"],
+        ["session/set_mode", "ask"],
+      ],
+    );
+  }).pipe(
+    Effect.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3code-kiro-modes-test-" })),
     Effect.scoped,
     Effect.provide(NodeServices.layer),
   ),

@@ -17,6 +17,7 @@ import { describe, expect } from "vite-plus/test";
 import { makeKiroAcpRuntime } from "./KiroAcpSupport.ts";
 import { makeKiroCommandInventory } from "./KiroAcpCommands.ts";
 import { checkKiroProviderStatus } from "../Layers/KiroProvider.ts";
+import { resolveKiroRequestedModeId } from "../Layers/KiroAdapter.ts";
 
 const decodeKiroSettings = Schema.decodeSync(KiroSettings);
 
@@ -62,6 +63,35 @@ describe.runIf(process.env.T3_KIRO_ACP_PROBE === "1")("Kiro ACP CLI probe", () =
       const currentModelId = started.sessionSetupResult.models?.currentModelId;
       expect(currentModelId).toBeDefined();
       if (currentModelId) yield* runtime.setSessionModel(currentModelId);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("switches to the planner and restores the starting agent", () =>
+    Effect.gen(function* () {
+      const runtime = yield* makeProbeRuntime;
+      yield* runtime.start();
+      const defaultModeId = (yield* runtime.getModeState)?.currentModeId;
+      expect(defaultModeId).toBeDefined();
+
+      const plannerModeId = resolveKiroRequestedModeId({
+        interactionMode: "plan",
+        modeState: yield* runtime.getModeState,
+        defaultModeId,
+      });
+      expect(plannerModeId).toBe("kiro_planner");
+      if (!plannerModeId || !defaultModeId) return;
+
+      yield* runtime.setMode(plannerModeId);
+      expect((yield* runtime.getModeState)?.currentModeId).toBe(plannerModeId);
+
+      const restoredModeId = resolveKiroRequestedModeId({
+        interactionMode: undefined,
+        modeState: yield* runtime.getModeState,
+        defaultModeId,
+      });
+      expect(restoredModeId).toBe(defaultModeId);
+      yield* runtime.setMode(defaultModeId);
+      expect((yield* runtime.getModeState)?.currentModeId).toBe(defaultModeId);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
