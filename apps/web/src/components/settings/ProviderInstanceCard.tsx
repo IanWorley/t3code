@@ -51,6 +51,8 @@ import { ProviderInstanceIcon, providerInstanceInitials } from "../chat/Provider
 import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
+import { FoldedSettingsSection } from "./FoldedSettingsSection";
+import { readCodexSetupMode } from "./CodexSetupSection.logic";
 import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
@@ -402,6 +404,7 @@ interface ProviderInstanceCardProps {
    */
   readonly headerAction?: ReactNode | undefined;
   readonly setup?: ReactNode;
+  readonly runtime?: ReactNode;
   readonly hiddenModels: ReadonlyArray<string>;
   readonly favoriteModels: ReadonlyArray<string>;
   readonly modelOrder: ReadonlyArray<string>;
@@ -445,6 +448,7 @@ export function ProviderInstanceCard({
   onDelete,
   headerAction,
   setup,
+  runtime,
   hiddenModels,
   favoriteModels,
   modelOrder,
@@ -515,7 +519,10 @@ export function ProviderInstanceCard({
   const driverKind: ProviderDriverKind | null = isProviderDriverKind(instance.driver)
     ? instance.driver
     : null;
-  const supportsVibeProxy = driverKind !== null && isVibeProxySupportedDriver(driverKind);
+  const supportsVibeProxy =
+    driverKind !== null &&
+    isVibeProxySupportedDriver(driverKind) &&
+    (driverKind !== "codex" || readCodexSetupMode(instance.config) !== "managed");
   const vibeProxyEnabled = instance.vibeProxy?.enabled ?? false;
   const providerEnvironment = instance.environment ?? [];
   const vibeProxyKey = providerEnvironment.find(
@@ -603,7 +610,7 @@ export function ProviderInstanceCard({
       showBadge={Boolean(accentColor)}
       className="size-5"
       iconClassName="size-4 text-foreground/80"
-      badgeClassName="right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3 px-0.5 text-3xs"
+      badgeClassName="right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3 px-0.5 text-5xs"
     />
   ) : FallbackIconComponent ? (
     <span className="inline-flex size-5 shrink-0 items-center justify-center">
@@ -687,11 +694,6 @@ export function ProviderInstanceCard({
           <span className="min-w-0 flex-1">
             <span className="flex min-w-0 items-center gap-2">
               <span className="truncate text-sm font-medium text-foreground">{displayName}</span>
-              {String(instanceId) !== String(instance.driver) ? (
-                <code className="min-w-0 truncate rounded bg-muted/60 px-1 py-0.5 text-3xs text-muted-foreground">
-                  {instanceId}
-                </code>
-              ) : null}
               {versionLabel ? (
                 <code className="max-w-24 shrink-0 truncate text-xs text-muted-foreground">
                   {versionLabel}
@@ -902,6 +904,26 @@ export function ProviderInstanceCard({
     </div>
   );
 
+  const runtimeFields = driverOption ? (
+    <ProviderSettingsForm
+      definition={driverOption}
+      value={instance.config}
+      idPrefix={`provider-instance-${instanceId}`}
+      variant="settings"
+      onChange={updateConfig}
+    />
+  ) : (
+    <SettingsRow
+      title="Driver"
+      description={
+        <span>
+          This instance uses <code className="text-foreground">{String(instance.driver)}</code>,
+          which is not available in this build. Its configuration is preserved.
+        </span>
+      }
+    />
+  );
+
   return (
     <>
       <SettingsSection title={displayName} icon={titleIconNode} headerAction={editorHeaderAction}>
@@ -949,33 +971,31 @@ export function ProviderInstanceCard({
 
       {setup ? <SettingsSection title="Setup">{setup}</SettingsSection> : null}
 
-      <SettingsSection
-        title="Runtime"
-        inert={readOnly}
-        aria-disabled={readOnly || undefined}
-        className={readOnly ? "opacity-50 select-none" : undefined}
-      >
-        {driverOption ? (
-          <ProviderSettingsForm
-            definition={driverOption}
-            value={instance.config}
-            idPrefix={`provider-instance-${instanceId}`}
-            variant="settings"
-            onChange={updateConfig}
-          />
-        ) : (
-          <SettingsRow
-            title="Driver"
-            description={
-              <span>
-                This instance uses{" "}
-                <code className="text-foreground">{String(instance.driver)}</code>, which is not
-                available in this build. Its configuration is preserved.
-              </span>
-            }
-          />
-        )}
-      </SettingsSection>
+      {instance.driver === "codex" && readCodexSetupMode(instance.config) === "managed" ? (
+        <div
+          inert={readOnly}
+          aria-disabled={readOnly || undefined}
+          className={readOnly ? "opacity-50 select-none" : undefined}
+        >
+          <FoldedSettingsSection
+            key={instanceId}
+            id={`provider-instance-${instanceId}-runtime`}
+            title="Runtime"
+            headerPlacement="outside"
+          >
+            {runtime ?? runtimeFields}
+          </FoldedSettingsSection>
+        </div>
+      ) : (
+        <SettingsSection
+          title="Runtime"
+          inert={readOnly}
+          aria-disabled={readOnly || undefined}
+          className={readOnly ? "opacity-50 select-none" : undefined}
+        >
+          {runtimeFields}
+        </SettingsSection>
+      )}
 
       <SettingsSection
         title="Environment"
