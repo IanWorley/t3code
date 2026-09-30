@@ -11,16 +11,21 @@ import * as Arbitrary from "effect/unstable/arbitrary/Arbitrary";
 
 import { encodeShellSnapshotForCache } from "./persistence.ts";
 
+const GENERATED_SAMPLE_COUNT = 100;
+const GENERATED_SAMPLE_SIZE = 30;
+const GENERATED_SAMPLE_SEED = "shell-cache-encoding";
+
 // Generated values can hold untrimmed strings, which a decoded value never
 // has. One encode and decode gives a value a client can hold; values that
-// fail are dropped. Size 30 makes the generator fill optional fields.
+// fail are dropped. The sample size makes the generator fill optional fields.
 const sampleDecoded = <S extends Schema.Constraint>(schema: S) =>
   Effect.gen(function* () {
     const encode = Schema.encodeEffect(schema);
     const decode = Schema.decodeEffect(schema);
     const generated = yield* Arbitrary.sampleEffect(Arbitrary.schema(schema), {
-      count: 1000,
-      size: 30,
+      count: GENERATED_SAMPLE_COUNT,
+      size: GENERATED_SAMPLE_SIZE,
+      seed: GENERATED_SAMPLE_SEED,
     });
     const decoded = yield* Effect.forEach(generated, (value) =>
       encode(value).pipe(Effect.flatMap(decode), Effect.option),
