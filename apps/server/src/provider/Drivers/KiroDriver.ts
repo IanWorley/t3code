@@ -27,6 +27,7 @@ import {
 } from "../ProviderDriver.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
+import { discoverKiroSkills } from "./KiroSkills.ts";
 import {
   makeProviderMaintenanceCapabilities,
   type ProviderMaintenanceCapabilitiesResolver,
@@ -94,6 +95,8 @@ export const KiroDriver: ProviderDriver<KiroSettings, KiroDriverEnv> = {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const httpClient = yield* HttpClient.HttpClient;
       const serverSettings = yield* ServerSettingsService;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
       const { cwd } = yield* ServerConfig;
       const eventLoggers = yield* ProviderEventLoggers;
       const processEnv = mergeProviderInstanceEnvironment(environment);
@@ -108,6 +111,11 @@ export const KiroDriver: ProviderDriver<KiroSettings, KiroDriverEnv> = {
         continuationGroupKey: continuationIdentity.continuationKey,
       });
       const effectiveConfig = { ...config, enabled } satisfies KiroSettings;
+      const readSkills = (cwd: string) =>
+        discoverKiroSkills(cwd, processEnv).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+        );
       const maintenanceCapabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
         binaryPath: effectiveConfig.binaryPath,
         env: processEnv,
@@ -121,6 +129,18 @@ export const KiroDriver: ProviderDriver<KiroSettings, KiroDriverEnv> = {
       const textGeneration = yield* makeKiroTextGeneration(effectiveConfig, processEnv);
 
       const checkProvider = checkKiroProviderStatus(effectiveConfig, processEnv, cwd).pipe(
+        Effect.flatMap((snapshot) =>
+          enabled
+            ? readSkills(cwd).pipe(
+                Effect.map((skills) => ({ ...snapshot, skills })),
+                Effect.catch((cause) =>
+                  Effect.logWarning("Could not read Kiro skills", { cause }).pipe(
+                    Effect.as(snapshot),
+                  ),
+                ),
+              )
+            : Effect.succeed(snapshot),
+        ),
         Effect.map(stampIdentity),
         Effect.provideService(Crypto.Crypto, crypto),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
@@ -163,6 +183,21 @@ export const KiroDriver: ProviderDriver<KiroSettings, KiroDriverEnv> = {
         accentColor,
         enabled,
         snapshot,
+        snapshotForCwd: (cwd) =>
+          !enabled
+            ? snapshot.getSnapshot
+            : Effect.all([snapshot.getSnapshot, readSkills(cwd)]).pipe(
+                Effect.map(([machineSnapshot, skills]) => ({ ...machineSnapshot, skills })),
+                Effect.mapError(
+                  (cause) =>
+                    new ProviderDriverError({
+                      driver: DRIVER_KIND,
+                      instanceId,
+                      detail: "Could not read Kiro workspace skills.",
+                      cause,
+                    }),
+                ),
+              ),
         adapter,
         textGeneration,
       } satisfies ProviderInstance;
