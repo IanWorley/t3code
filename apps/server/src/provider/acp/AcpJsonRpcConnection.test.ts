@@ -1029,6 +1029,48 @@ describe("AcpSessionRuntime", () => {
     );
   });
 
+  it.effect(
+    "switches modes through session/set_mode when the agent advertises no mode config option",
+    () => {
+      const requestEvents: Array<AcpSessionRuntime.AcpSessionRequestLogEvent> = [];
+      return Effect.gen(function* () {
+        const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
+        yield* runtime.start();
+
+        yield* runtime.setMode("architect");
+
+        expect(
+          requestEvents
+            .filter((event) => event.status === "succeeded")
+            .map((event) => [event.method, event.payload]),
+        ).toContainEqual([
+          "session/set_mode",
+          { sessionId: "mock-session-1", modeId: "architect" },
+        ]);
+        expect(requestEvents.some((event) => event.method === "session/set_config_option")).toBe(
+          false,
+        );
+        expect((yield* runtime.getModeState)?.currentModeId).toBe("architect");
+      }).pipe(
+        Effect.provide(
+          AcpSessionRuntime.layer({
+            ...mockRuntimeOptions,
+            spawn: {
+              ...mockRuntimeOptions.spawn,
+              env: { ...process.env, T3_ACP_OMIT_CONFIG_OPTIONS: "1" },
+            },
+            requestLogger: (event) =>
+              Effect.sync(() => {
+                requestEvents.push(event);
+              }),
+          }),
+        ),
+        Effect.scoped,
+        Effect.provide(NodeServices.layer),
+      );
+    },
+  );
+
   it.effect("skips no-op session config writes when the requested value is already active", () => {
     const requestEvents: Array<AcpSessionRuntime.AcpSessionRequestLogEvent> = [];
     return Effect.gen(function* () {

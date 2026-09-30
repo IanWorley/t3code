@@ -41,6 +41,8 @@ import {
 } from "./AcpRuntimeModel.ts";
 
 const MAX_SHOWN_TOOL_CALL_IDS = 256;
+const MODE_CONFIG_ID = "mode";
+const SET_SESSION_MODE_METHOD = "session/set_mode";
 
 interface AcpToolCallTrackedState {
   readonly state: AcpToolCallState;
@@ -259,9 +261,10 @@ export class AcpSessionRuntime extends Context.Service<
      */
     readonly cancel: Effect.Effect<void, EffectAcpErrors.AcpError>;
     /**
-     * Selects the active mode through the negotiated `mode` configuration option.
-     * This is a no-op when the requested mode is already active.
+     * Selects the active mode. Uses the negotiated `mode` configuration option when the
+     * agent advertises one, otherwise `session/set_mode`. No-op when already active.
      * @see https://agentclientprotocol.com/protocol/schema#session/set_config_option
+     * @see https://agentclientprotocol.com/protocol/schema#session/set_mode
      */
     readonly setMode: (
       modeId: string,
@@ -1117,7 +1120,27 @@ export const make = (
             if (modeState?.currentModeId === modeId) {
               return Effect.succeed({} satisfies EffectAcpSchema.SetSessionModeResponse);
             }
-            return setConfigOption("mode", modeId).pipe(
+            return Ref.get(configOptionsRef).pipe(
+              Effect.flatMap((configOptions) =>
+                // Agents that advertise modes only through `modes` (Kiro) reject
+                // set_config_option, so fall back to the dedicated method.
+                findSessionConfigOption(configOptions, MODE_CONFIG_ID)
+                  ? setConfigOption(MODE_CONFIG_ID, modeId).pipe(Effect.asVoid)
+                  : getStartedState.pipe(
+                      Effect.flatMap((started) => {
+                        const requestPayload = {
+                          sessionId: started.sessionId,
+                          modeId,
+                        } satisfies EffectAcpSchema.SetSessionModeRequest;
+                        return runLoggedRequest(
+                          SET_SESSION_MODE_METHOD,
+                          requestPayload,
+                          acp.raw.request(SET_SESSION_MODE_METHOD, requestPayload),
+                        );
+                      }),
+                      Effect.asVoid,
+                    ),
+              ),
               Effect.tap(() => updateCurrentModeId(modeId)),
               Effect.as({} satisfies EffectAcpSchema.SetSessionModeResponse),
             );

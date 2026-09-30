@@ -17,7 +17,6 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   RuntimeRequestId,
-  type RuntimeMode,
   type ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -78,8 +77,7 @@ const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonStri
 const PROVIDER = ProviderDriverKind.make("kiro");
 const KIRO_RESUME_VERSION = 1 as const;
 const ACP_PLAN_MODE_ALIASES = ["plan", "architect"];
-const ACP_IMPLEMENT_MODE_ALIASES = ["code", "agent", "default", "chat", "implement"];
-const ACP_APPROVAL_MODE_ALIASES = ["ask"];
+const KIRO_PLANNER_MODE_ID = "kiro_planner";
 
 function encodeJsonStringForDiagnostics(input: unknown): string | undefined {
   const result = encodeUnknownJsonStringExit(input);
@@ -121,6 +119,8 @@ interface PendingUserInput {
 interface KiroSessionContext {
   readonly threadId: ThreadId;
   readonly providerSessionId: string;
+  /** Agent (ACP mode) the session started with; restored after plan-mode turns. */
+  readonly defaultModeId: string | undefined;
   session: ProviderSession;
   readonly scope: Scope.Closeable;
   readonly acp: AcpSessionRuntime.AcpSessionRuntime["Service"];
@@ -207,14 +207,16 @@ function findModeByAliases(
   return undefined;
 }
 
-function isPlanMode(mode: AcpSessionMode): boolean {
-  return findModeByAliases([mode], ACP_PLAN_MODE_ALIASES) !== undefined;
-}
-
-function resolveRequestedModeId(input: {
+/**
+ * Kiro exposes its agents (built-in and the user's custom ones) as ACP modes, so
+ * runtime mode must not pick a mode: `--trust-all-tools` and permission requests
+ * carry that. Plan interaction selects Kiro's planner; everything else returns to
+ * the agent the session started with (the user's configured default agent).
+ */
+export function resolveKiroRequestedModeId(input: {
   readonly interactionMode: ProviderInteractionMode | undefined;
-  readonly runtimeMode: RuntimeMode;
   readonly modeState: AcpSessionModeState | undefined;
+  readonly defaultModeId: string | undefined;
 }): string | undefined {
   const modeState = input.modeState;
   if (!modeState) {
@@ -222,30 +224,20 @@ function resolveRequestedModeId(input: {
   }
 
   if (input.interactionMode === "plan") {
-    return findModeByAliases(modeState.availableModes, ACP_PLAN_MODE_ALIASES)?.id;
-  }
-
-  if (input.runtimeMode === "approval-required") {
     return (
-      findModeByAliases(modeState.availableModes, ACP_APPROVAL_MODE_ALIASES)?.id ??
-      findModeByAliases(modeState.availableModes, ACP_IMPLEMENT_MODE_ALIASES)?.id ??
-      modeState.availableModes.find((mode) => !isPlanMode(mode))?.id ??
-      modeState.currentModeId
+      modeState.availableModes.find((mode) => mode.id === KIRO_PLANNER_MODE_ID)?.id ??
+      findModeByAliases(modeState.availableModes, ACP_PLAN_MODE_ALIASES)?.id
     );
   }
 
-  return (
-    findModeByAliases(modeState.availableModes, ACP_IMPLEMENT_MODE_ALIASES)?.id ??
-    findModeByAliases(modeState.availableModes, ACP_APPROVAL_MODE_ALIASES)?.id ??
-    modeState.availableModes.find((mode) => !isPlanMode(mode))?.id ??
-    modeState.currentModeId
-  );
+  return input.defaultModeId;
 }
 
 function applyRequestedSessionConfiguration<E>(input: {
   readonly runtime: AcpSessionRuntime.AcpSessionRuntime["Service"];
   readonly providerSessionId: string;
-  readonly runtimeMode: RuntimeMode;
+  /** The agent the Kiro session started with; plan mode returns here when it ends. */
+  readonly defaultModeId: string | undefined;
   readonly interactionMode: ProviderInteractionMode | undefined;
   readonly modelSelection:
     | {
@@ -273,10 +265,10 @@ function applyRequestedSessionConfiguration<E>(input: {
       });
     }
 
-    const requestedModeId = resolveRequestedModeId({
+    const requestedModeId = resolveKiroRequestedModeId({
       interactionMode: input.interactionMode,
-      runtimeMode: input.runtimeMode,
       modeState: yield* input.runtime.getModeState,
+      defaultModeId: input.defaultModeId,
     });
     if (!requestedModeId) {
       return;
@@ -640,10 +632,11 @@ export function makeKiroAdapter(kiroSettings: KiroSettings, options?: KiroAdapte
             ),
           );
 
+          const defaultModeId = (yield* acp.getModeState)?.currentModeId;
           yield* applyRequestedSessionConfiguration({
             runtime: acp,
             providerSessionId: started.sessionId,
-            runtimeMode: input.runtimeMode,
+            defaultModeId,
             interactionMode: undefined,
             modelSelection: kiroModelSelection,
             mapError: ({ cause, method }) =>
@@ -670,6 +663,7 @@ export function makeKiroAdapter(kiroSettings: KiroSettings, options?: KiroAdapte
           ctx = {
             threadId: input.threadId,
             providerSessionId: started.sessionId,
+            defaultModeId,
             session,
             scope: sessionScope,
             acp,
@@ -856,7 +850,7 @@ export function makeKiroAdapter(kiroSettings: KiroSettings, options?: KiroAdapte
           yield* applyRequestedSessionConfiguration({
             runtime: ctx.acp,
             providerSessionId: ctx.providerSessionId,
-            runtimeMode: ctx.session.runtimeMode,
+            defaultModeId: ctx.defaultModeId,
             interactionMode: input.interactionMode,
             modelSelection:
               model === undefined
