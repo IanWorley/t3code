@@ -28,6 +28,48 @@ const decodeKiroSettings = Schema.decodeSync(KiroSettings);
 const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const mockAgentPath = NodePath.join(__dirname, "../../../scripts/acp-mock-agent.ts");
 
+it.effect(
+  "KiroAdapter exposes native children without mixing their replies into the root reply",
+  () =>
+    Effect.gen(function* () {
+      const platform = yield* HostProcessPlatform;
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockAgentWrapper(platform, {
+          T3_ACP_EMIT_KIRO_SUBAGENTS: "1",
+        }),
+      );
+      const adapter = yield* makeKiroAdapter(
+        decodeKiroSettings({ enabled: true, binaryPath: wrapperPath }),
+      );
+      const threadId = ThreadId.make("kiro-native-child-thread");
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "turn.completed"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* adapter.startSession({ threadId, cwd: process.cwd(), runtimeMode: "full-access" });
+      yield* adapter.sendTurn({ threadId, input: "launch children", attachments: [] });
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      assert.equal(events.filter((event) => event.type === "task.started").length, 2);
+      assert.deepStrictEqual(
+        events.flatMap((event) => (event.type === "task.completed" ? [event.payload.summary] : [])),
+        ["alpha", 'Replied with "beta" as instructed.'],
+      );
+      assert.equal(
+        events
+          .flatMap((event) => (event.type === "content.delta" ? [event.payload.delta] : []))
+          .join(""),
+        "hello from mock",
+      );
+    }).pipe(
+      Effect.provide(
+        ServerConfig.layerTest(process.cwd(), { prefix: "t3code-kiro-children-test-" }),
+      ),
+      Effect.scoped,
+      Effect.provide(NodeServices.layer),
+    ),
+);
+
 async function makeMockAgentWrapper(platform: NodeJS.Platform, extraEnv?: Record<string, string>) {
   const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "kiro-acp-mock-"));
   const isWindows = platform === "win32";

@@ -11,6 +11,7 @@ import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as EffectAcpAgent from "effect-acp/agent";
 import * as AcpError from "effect-acp/errors";
 import type * as AcpSchema from "effect-acp/schema";
+import kiroSubagents from "../src/provider/testFixtures/kiroSubagents.json" with { type: "json" };
 
 const requestLogPath = process.env.T3_ACP_REQUEST_LOG_PATH;
 const exitLogPath = process.env.T3_ACP_EXIT_LOG_PATH;
@@ -636,6 +637,11 @@ const program = Effect.gen(function* () {
     Effect.gen(function* () {
       const requestedSessionId = String(request.sessionId ?? sessionId);
       promptCount += 1;
+      if (process.env.T3_ACP_EMIT_KIRO_SUBAGENTS === "1") {
+        for (const notification of kiroSubagents) {
+          yield* agent.client.extNotification(notification.method, notification.params);
+        }
+      }
       if (
         process.env.T3_ACP_CRASH_PROMPT === "1" &&
         request.prompt.some((part) => part.type === "text" && part.text === "crash now")

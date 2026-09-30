@@ -65,6 +65,7 @@ import {
 } from "../acp/AcpRuntimeModel.ts";
 import { makeAcpNativeLoggerFactory } from "../acp/AcpNativeLogging.ts";
 import { KIRO_COMMANDS_EXECUTE_METHOD } from "../acp/KiroAcpCommands.ts";
+import { makeKiroSubagents, type KiroSubagents } from "../acp/KiroSubagents.ts";
 import {
   applyKiroAcpModelSelection,
   makeKiroAcpRuntime,
@@ -124,12 +125,14 @@ interface KiroSessionContext {
   session: ProviderSession;
   readonly scope: Scope.Closeable;
   readonly acp: AcpSessionRuntime.AcpSessionRuntime["Service"];
+  readonly subagents: KiroSubagents<ProviderAdapterRequestError>;
   notificationFiber: Fiber.Fiber<void, never> | undefined;
   readonly pendingApprovals: Map<ApprovalRequestId, PendingApproval>;
   readonly pendingUserInputs: Map<ApprovalRequestId, PendingUserInput>;
   readonly turns: Array<{ id: TurnId; items: Array<unknown> }>;
   lastPlanFingerprint: string | undefined;
   activeTurnId: TurnId | undefined;
+  activeTurnStartedAtMs: number | undefined;
   /** Number of sendTurn prompts currently in flight or being prepared.
    * >0 means a turn is actively running, so a new sendTurn is a steer that
    * continues it, and only the last remaining prompt settles the turn. */
@@ -454,6 +457,7 @@ export function makeKiroAdapter(kiroSettings: KiroSettings, options?: KiroAdapte
           yield* Fiber.interrupt(ctx.notificationFiber);
         }
         yield* Effect.ignore(Scope.close(ctx.scope, Exit.void));
+        yield* ctx.subagents.close("stopped");
         sessions.delete(ctx.threadId);
         yield* offerRuntimeEvent({
           type: "session.exited",
@@ -559,6 +563,18 @@ export function makeKiroAdapter(kiroSettings: KiroSettings, options?: KiroAdapte
                 }),
             ),
           );
+          const subagents = yield* makeKiroSubagents({
+            runtime: acp,
+            threadId: input.threadId,
+            getTurn: () =>
+              ctx?.promptsInFlight > 0 &&
+              ctx.activeTurnId !== undefined &&
+              ctx.activeTurnStartedAtMs !== undefined
+                ? { id: ctx.activeTurnId, startedAtMs: ctx.activeTurnStartedAtMs }
+                : undefined,
+            makeStamp: makeEventStamp,
+            publish: offerRuntimeEvent,
+          });
           const started = yield* Effect.gen(function* () {
             yield* acp.handleRequestPermission((params) =>
               mapExtensionFailure(
@@ -667,12 +683,14 @@ export function makeKiroAdapter(kiroSettings: KiroSettings, options?: KiroAdapte
             session,
             scope: sessionScope,
             acp,
+            subagents,
             notificationFiber: undefined,
             pendingApprovals,
             pendingUserInputs,
             turns: [],
             lastPlanFingerprint: undefined,
             activeTurnId: undefined,
+            activeTurnStartedAtMs: undefined,
             promptsInFlight: 0,
             stopped: false,
           };
@@ -681,6 +699,9 @@ export function makeKiroAdapter(kiroSettings: KiroSettings, options?: KiroAdapte
             Stream.mapEffect(acp.getEvents(), (event) =>
               Effect.gen(function* () {
                 switch (event._tag) {
+                  case "ConnectionTerminated":
+                    yield* ctx.subagents.close("interrupted");
+                    return;
                   case "EventStreamBarrier":
                     yield* Deferred.succeed(event.acknowledge, undefined);
                     return;
@@ -864,6 +885,7 @@ export function makeKiroAdapter(kiroSettings: KiroSettings, options?: KiroAdapte
           });
           ctx.activeTurnId = turnId;
           if (steeringTurnId === undefined) {
+            ctx.activeTurnStartedAtMs = Date.parse(yield* nowIso);
             ctx.lastPlanFingerprint = undefined;
           }
           ctx.session = {

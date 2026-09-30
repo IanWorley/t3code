@@ -3244,6 +3244,48 @@ describe("quiet timeline: nested agents", () => {
     ).toEqual(["turn-fold", "agent-spawn"]);
   });
 
+  it("shows a Kiro child as completed after an earlier unknown idle outcome", () => {
+    const turnId = TurnId.make("kiro-late-result-turn");
+    const rows = [
+      { kind: "task.started", status: undefined, detail: "Reply with alpha" },
+      { kind: "task.updated", status: "idle", detail: "Agent ended; result unavailable." },
+      { kind: "task.completed", status: "completed", detail: "alpha" },
+    ].map((row, index) =>
+      makeActivity({
+        id: EventId.make(`kiro-late-result-${index}`),
+        kind: row.kind,
+        summary: row.detail,
+        createdAt: `2026-04-01T00:00:0${index}.000Z`,
+        turnId,
+        payload: {
+          taskId: "kiro-child",
+          agentKind: "agent",
+          taskType: "subagent",
+          title: "alpha",
+          role: "kiro_default",
+          status: row.status,
+          detail: row.detail,
+        },
+      }),
+    );
+    const feed = buildThreadFeed(
+      makeThread({
+        id: ThreadId.make("kiro-late-result-thread"),
+        projectId: ProjectId.make("project-1"),
+        title: "Kiro child",
+        activities: rows,
+      }),
+    );
+    const presentation = deriveThreadFeedPresentation(feed, null, new Set([turnId]));
+    expect(presentation.find((row) => row.type === "agent-spawn")).toMatchObject({
+      summary: {
+        title: "alpha",
+        tone: "completed",
+        members: [{ title: "alpha", status: "completed", detail: "Reply with alpha" }],
+      },
+    });
+  });
+
   it("presents a spawn batch as one card whose status line follows the newest member activity", () => {
     const turnId = TurnId.make("turn-spawn-card");
     const latestTurn = {

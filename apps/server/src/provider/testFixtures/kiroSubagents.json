@@ -1,0 +1,710 @@
+[
+  {
+    "method": "_kiro.dev/subagent/list_update",
+    "params": {
+      "subagents": [],
+      "pendingStages": []
+    }
+  },
+  {
+    "method": "_kiro.dev/subagent/list_update",
+    "params": {
+      "subagents": [
+        {
+          "sessionId": "14c60fe5-3a00-470e-8ac9-85b404431d0c",
+          "sessionName": "alpha",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with alpha",
+          "status": {
+            "type": "working",
+            "message": "Running"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        }
+      ],
+      "pendingStages": []
+    }
+  },
+  {
+    "method": "_kiro.dev/subagent/list_update",
+    "params": {
+      "subagents": [
+        {
+          "sessionId": "5f6692e4-3655-4ed1-91b1-8c70b48c177e",
+          "sessionName": "beta",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with beta",
+          "status": {
+            "type": "working",
+            "message": "Running"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        },
+        {
+          "sessionId": "14c60fe5-3a00-470e-8ac9-85b404431d0c",
+          "sessionName": "alpha",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with alpha",
+          "status": {
+            "type": "working",
+            "message": "Running"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        }
+      ],
+      "pendingStages": []
+    }
+  },
+  {
+    "method": "_kiro.dev/subagent/list_update",
+    "params": {
+      "subagents": [
+        {
+          "sessionId": "5f6692e4-3655-4ed1-91b1-8c70b48c177e",
+          "sessionName": "beta",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with beta",
+          "status": {
+            "type": "working",
+            "message": "Running"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        },
+        {
+          "sessionId": "14c60fe5-3a00-470e-8ac9-85b404431d0c",
+          "sessionName": "alpha",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with alpha",
+          "status": {
+            "type": "working",
+            "message": "Running"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        }
+      ],
+      "pendingStages": []
+    }
+  },
+  {
+    "method": "_kiro.dev/subagent/list_update",
+    "params": {
+      "subagents": [
+        {
+          "sessionId": "5f6692e4-3655-4ed1-91b1-8c70b48c177e",
+          "sessionName": "beta",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with beta",
+          "status": {
+            "type": "working",
+            "message": "Running"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        },
+        {
+          "sessionId": "14c60fe5-3a00-470e-8ac9-85b404431d0c",
+          "sessionName": "alpha",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with alpha",
+          "status": {
+            "type": "working",
+            "message": "Running"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        }
+      ],
+      "pendingStages": []
+    }
+  },
+  {
+    "method": "_kiro.dev/subagent/list_update",
+    "params": {
+      "subagents": [
+        {
+          "sessionId": "5f6692e4-3655-4ed1-91b1-8c70b48c177e",
+          "sessionName": "beta",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with beta",
+          "status": {
+            "type": "working",
+            "message": "Running"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        },
+        {
+          "sessionId": "14c60fe5-3a00-470e-8ac9-85b404431d0c",
+          "sessionName": "alpha",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with alpha",
+          "status": {
+            "type": "working",
+            "message": "Running"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        }
+      ],
+      "pendingStages": []
+    }
+  },
+  {
+    "method": "_kiro.dev/subagent/list_update",
+    "params": {
+      "subagents": [
+        {
+          "sessionId": "5f6692e4-3655-4ed1-91b1-8c70b48c177e",
+          "sessionName": "beta",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with beta",
+          "status": {
+            "type": "working",
+            "message": "Running"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        },
+        {
+          "sessionId": "14c60fe5-3a00-470e-8ac9-85b404431d0c",
+          "sessionName": "alpha",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with alpha",
+          "status": {
+            "type": "working",
+            "message": "Running"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        }
+      ],
+      "pendingStages": []
+    }
+  },
+  {
+    "method": "_kiro.dev/subagent/list_update",
+    "params": {
+      "subagents": [
+        {
+          "sessionId": "5f6692e4-3655-4ed1-91b1-8c70b48c177e",
+          "sessionName": "beta",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with beta",
+          "status": {
+            "type": "working",
+            "message": "Running"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        },
+        {
+          "sessionId": "14c60fe5-3a00-470e-8ac9-85b404431d0c",
+          "sessionName": "alpha",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with alpha",
+          "status": {
+            "type": "working",
+            "message": "Running"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        }
+      ],
+      "pendingStages": []
+    }
+  },
+  {
+    "method": "session/update",
+    "params": {
+      "sessionId": "14c60fe5-3a00-470e-8ac9-85b404431d0c",
+      "update": {
+        "sessionUpdate": "agent_message_chunk",
+        "content": {
+          "type": "text",
+          "text": "alpha"
+        }
+      }
+    }
+  },
+  {
+    "method": "session/update",
+    "params": {
+      "sessionId": "5f6692e4-3655-4ed1-91b1-8c70b48c177e",
+      "update": {
+        "sessionUpdate": "agent_message_chunk",
+        "content": {
+          "type": "text",
+          "text": "beta"
+        }
+      }
+    }
+  },
+  {
+    "method": "session/update",
+    "params": {
+      "sessionId": "14c60fe5-3a00-470e-8ac9-85b404431d0c",
+      "update": {
+        "sessionUpdate": "tool_call",
+        "toolCallId": "tooluse_RRZbuHPjI6S7bLXQPmEl3v",
+        "title": "Summarizing",
+        "rawInput": {
+          "__tool_use_purpose": "Completing the task as required",
+          "taskDescription": "Reply with alpha",
+          "taskResult": "alpha"
+        },
+        "_meta": {
+          "kiro": {
+            "toolName": "summary"
+          }
+        }
+      }
+    }
+  },
+  {
+    "method": "session/update",
+    "params": {
+      "sessionId": "14c60fe5-3a00-470e-8ac9-85b404431d0c",
+      "update": {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "tooluse_RRZbuHPjI6S7bLXQPmEl3v",
+        "kind": "other",
+        "status": "completed",
+        "title": "Summarizing",
+        "rawInput": {
+          "__tool_use_purpose": "Completing the task as required",
+          "taskDescription": "Reply with alpha",
+          "taskResult": "alpha"
+        },
+        "rawOutput": {
+          "items": [
+            {
+              "Text": ""
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "method": "session/update",
+    "params": {
+      "sessionId": "5f6692e4-3655-4ed1-91b1-8c70b48c177e",
+      "update": {
+        "sessionUpdate": "tool_call",
+        "toolCallId": "tooluse_JanMEBaMG1xa6KiApiHHit",
+        "title": "Summarizing",
+        "rawInput": {
+          "__tool_use_purpose": "Completing the task as required",
+          "taskDescription": "Reply with beta",
+          "taskResult": "Replied with \"beta\" as instructed."
+        },
+        "_meta": {
+          "kiro": {
+            "toolName": "summary"
+          }
+        }
+      }
+    }
+  },
+  {
+    "method": "session/update",
+    "params": {
+      "sessionId": "5f6692e4-3655-4ed1-91b1-8c70b48c177e",
+      "update": {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "tooluse_JanMEBaMG1xa6KiApiHHit",
+        "kind": "other",
+        "status": "completed",
+        "title": "Summarizing",
+        "rawInput": {
+          "__tool_use_purpose": "Completing the task as required",
+          "taskDescription": "Reply with beta",
+          "taskResult": "Replied with \"beta\" as instructed."
+        },
+        "rawOutput": {
+          "items": [
+            {
+              "Text": ""
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "method": "_kiro.dev/subagent/list_update",
+    "params": {
+      "subagents": [
+        {
+          "sessionId": "5f6692e4-3655-4ed1-91b1-8c70b48c177e",
+          "sessionName": "beta",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with beta",
+          "status": {
+            "type": "working",
+            "message": "Running"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        },
+        {
+          "sessionId": "14c60fe5-3a00-470e-8ac9-85b404431d0c",
+          "sessionName": "alpha",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with alpha",
+          "status": {
+            "type": "terminated"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        }
+      ],
+      "pendingStages": []
+    }
+  },
+  {
+    "method": "_kiro.dev/subagent/list_update",
+    "params": {
+      "subagents": [
+        {
+          "sessionId": "5f6692e4-3655-4ed1-91b1-8c70b48c177e",
+          "sessionName": "beta",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with beta",
+          "status": {
+            "type": "working",
+            "message": "Running"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        },
+        {
+          "sessionId": "14c60fe5-3a00-470e-8ac9-85b404431d0c",
+          "sessionName": "alpha",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with alpha",
+          "status": {
+            "type": "terminated"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        }
+      ],
+      "pendingStages": []
+    }
+  },
+  {
+    "method": "_kiro.dev/subagent/list_update",
+    "params": {
+      "subagents": [
+        {
+          "sessionId": "5f6692e4-3655-4ed1-91b1-8c70b48c177e",
+          "sessionName": "beta",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with beta",
+          "status": {
+            "type": "working",
+            "message": "Running"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        },
+        {
+          "sessionId": "14c60fe5-3a00-470e-8ac9-85b404431d0c",
+          "sessionName": "alpha",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with alpha",
+          "status": {
+            "type": "terminated"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        }
+      ],
+      "pendingStages": []
+    }
+  },
+  {
+    "method": "_kiro.dev/subagent/list_update",
+    "params": {
+      "subagents": [
+        {
+          "sessionId": "5f6692e4-3655-4ed1-91b1-8c70b48c177e",
+          "sessionName": "beta",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with beta",
+          "status": {
+            "type": "working",
+            "message": "Running"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        },
+        {
+          "sessionId": "14c60fe5-3a00-470e-8ac9-85b404431d0c",
+          "sessionName": "alpha",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with alpha",
+          "status": {
+            "type": "terminated"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        }
+      ],
+      "pendingStages": []
+    }
+  },
+  {
+    "method": "_kiro.dev/subagent/list_update",
+    "params": {
+      "subagents": [
+        {
+          "sessionId": "5f6692e4-3655-4ed1-91b1-8c70b48c177e",
+          "sessionName": "beta",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with beta",
+          "status": {
+            "type": "working",
+            "message": "Running"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        },
+        {
+          "sessionId": "14c60fe5-3a00-470e-8ac9-85b404431d0c",
+          "sessionName": "alpha",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with alpha",
+          "status": {
+            "type": "terminated"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        }
+      ],
+      "pendingStages": []
+    }
+  },
+  {
+    "method": "_kiro.dev/subagent/list_update",
+    "params": {
+      "subagents": [
+        {
+          "sessionId": "5f6692e4-3655-4ed1-91b1-8c70b48c177e",
+          "sessionName": "beta",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with beta",
+          "status": {
+            "type": "terminated"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        },
+        {
+          "sessionId": "14c60fe5-3a00-470e-8ac9-85b404431d0c",
+          "sessionName": "alpha",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with alpha",
+          "status": {
+            "type": "terminated"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        }
+      ],
+      "pendingStages": []
+    }
+  },
+  {
+    "method": "_kiro.dev/subagent/list_update",
+    "params": {
+      "subagents": [],
+      "pendingStages": []
+    }
+  },
+  {
+    "method": "_kiro.dev/subagent/list_update",
+    "params": {
+      "subagents": [
+        {
+          "sessionId": "5f6692e4-3655-4ed1-91b1-8c70b48c177e",
+          "sessionName": "beta",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with beta",
+          "status": {
+            "type": "terminated"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        },
+        {
+          "sessionId": "14c60fe5-3a00-470e-8ac9-85b404431d0c",
+          "sessionName": "alpha",
+          "agentName": "kiro_default",
+          "initialQuery": "Reply with alpha",
+          "status": {
+            "type": "terminated"
+          },
+          "group": "crew-Parallel subagent vi",
+          "role": "kiro_default",
+          "dependsOn": [],
+          "hasLoop": false,
+          "loopIteration": 0,
+          "loopMaxIterations": 0,
+          "createdAtMs": 1790780633325
+        }
+      ],
+      "pendingStages": []
+    }
+  },
+  {
+    "method": "_kiro.dev/subagent/list_update",
+    "params": {
+      "subagents": [],
+      "pendingStages": []
+    }
+  },
+  {
+    "method": "_kiro.dev/subagent/list_update",
+    "params": {
+      "subagents": [],
+      "pendingStages": []
+    }
+  }
+]
