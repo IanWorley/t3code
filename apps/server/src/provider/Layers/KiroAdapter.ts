@@ -565,6 +565,7 @@ export function makeKiroAdapter(kiroSettings: KiroSettings, options?: KiroAdapte
           );
           const subagents = yield* makeKiroSubagents({
             runtime: acp,
+            scope: sessionScope,
             threadId: input.threadId,
             getTurn: () =>
               ctx?.promptsInFlight > 0 &&

@@ -5,9 +5,51 @@ import {
   foldSubagentActivities,
   formatSubagentModelLabel,
   formatSubagentTokenCount,
+  formatSubagentContextUsage,
 } from "./subagentRuntime.ts";
 
 let sequence = 0;
+it("retains child chat independently of status and processed-token totals", () => {
+  const observation = {
+    entries: [{ id: "reply", kind: "assistant", text: "Full child reply\nwith whitespace." }],
+    truncated: false,
+    contextUsage: { usedTokens: 4000, capacityTokens: 200000 },
+  };
+  const agents = foldSubagentActivities([
+    activity("task.started", { taskId: "kiro-child", title: "Review" }),
+    activity("task.completed", { taskId: "kiro-child", status: "completed", summary: "Done" }),
+    activity("task.progress", { taskId: "kiro-child", observationSnapshot: true, observation }),
+  ]);
+  expect(agents[0]).toMatchObject({
+    status: "completed",
+    result: "Done",
+    progress: null,
+    usage: null,
+    observation,
+  });
+  expect(deriveAgentPanelModel({ agents }).totalTokens).toBe(0);
+  expect(formatSubagentContextUsage(agents[0]?.observation?.contextUsage ?? null)).toBe(
+    "Context 4.0k / 200k tokens",
+  );
+});
+
+it("ignores malformed child observations without replacing known chat", () => {
+  const observation = {
+    entries: [{ id: "reply", kind: "assistant", text: "Known reply" }],
+    truncated: false,
+    contextUsage: null,
+  };
+  const agents = foldSubagentActivities([
+    activity("task.started", { taskId: "kiro-child" }),
+    activity("task.progress", { taskId: "kiro-child", observationSnapshot: true, observation }),
+    activity("task.progress", {
+      taskId: "kiro-child",
+      observationSnapshot: true,
+      observation: { ...observation, contextUsage: { usedTokens: -1, capacityTokens: 10 } },
+    }),
+  ]);
+  expect(agents[0]?.observation).toEqual(observation);
+});
 /**
  * Fixtures model POST-INGESTION rows: ingestion stamps agentKind on every
  * task.* payload, so the helper stamps too (same classifier). Pass an

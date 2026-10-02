@@ -35,6 +35,11 @@ import {
 } from "@t3tools/client-runtime/work-log/presentation";
 import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
 import { commandProgramName } from "@t3tools/client-runtime/work-log/command-label";
+import {
+  foldSubagentActivities,
+  type SubagentUsage,
+} from "@t3tools/client-runtime/state/subagentRuntime";
+import type { TaskAgentObservation } from "@t3tools/contracts";
 
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
@@ -114,6 +119,8 @@ export interface WorkLogEntry {
       readonly title: string;
       readonly status: WorkLogToolLifecycleStatus | undefined;
       readonly detail: string | undefined;
+      readonly observation?: TaskAgentObservation;
+      readonly usage?: SubagentUsage | null;
       /** When this member last reported, so the card can show the newest activity. */
       readonly updatedAt: string;
     }>;
@@ -222,6 +229,8 @@ export interface AgentSpawnSummary {
     readonly status: string;
     readonly tone: "working" | "completed" | "failed" | "stopped";
     readonly detail: string | undefined;
+    readonly observation?: TaskAgentObservation;
+    readonly usage?: SubagentUsage | null;
     readonly updatedAt: string;
   }>;
 }
@@ -388,6 +397,7 @@ function isAgentInternalActivity(activity: OrchestrationThreadActivity): boolean
   if (!payload) {
     return false;
   }
+  if (payload.observationSnapshot === true) return true;
   const isTaskRow =
     activity.kind === "task.started" ||
     activity.kind === "task.progress" ||
@@ -447,7 +457,28 @@ function deriveWorkLogEntries(
     if (isAgentInternalActivity(activity)) continue;
     entries.push(toDerivedWorkLogEntry(activity));
   }
-  return collapseDerivedWorkLogEntries(entries);
+  const collapsed = collapseDerivedWorkLogEntries(entries);
+  if (!ordered.some((activity) => asRecord(activity.payload)?.observationSnapshot === true)) {
+    return collapsed;
+  }
+  const agents = new Map(foldSubagentActivities(ordered).map((agent) => [agent.id, agent]));
+  return collapsed.map((entry) =>
+    entry.agentSpawn
+      ? {
+          ...entry,
+          agentSpawn: {
+            ...entry.agentSpawn,
+            agents: entry.agentSpawn.agents.map((member, index) => {
+              const taskId = entry.agentSpawn?.agentTaskIds[index];
+              const agent = taskId ? agents.get(taskId) : undefined;
+              return agent?.observation
+                ? { ...member, observation: agent.observation, usage: agent.usage }
+                : member;
+            }),
+          },
+        }
+      : entry,
+  );
 }
 
 /** Adapters forward unknown wire-only SDK messages (background_tasks_changed,
@@ -1137,6 +1168,7 @@ export function agentSpawnSummary(
       status: tone === "working" ? "working" : (agent.status ?? tone),
       tone,
       detail: agent.detail,
+      ...(agent.observation ? { observation: agent.observation, usage: agent.usage } : {}),
       updatedAt: agent.updatedAt,
     };
   });

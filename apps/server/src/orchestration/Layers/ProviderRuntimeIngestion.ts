@@ -718,12 +718,31 @@ export function runtimeEventToActivities(
           ? { title: truncateDetail(event.payload.description, 120) }
           : {};
       const hasProgressState =
-        event.payload.typedUsage === undefined ||
+        (event.payload.typedUsage === undefined && event.payload.observation === undefined) ||
         event.payload.summary !== undefined ||
         event.payload.lastToolName !== undefined ||
         event.payload.status !== undefined ||
         event.payload.error !== undefined;
       return [
+        ...(event.payload.observation !== undefined
+          ? [
+              {
+                id: EventId.make(`task-observation:${event.threadId}:${event.payload.taskId}`),
+                createdAt: event.createdAt,
+                tone: "info" as const,
+                kind: "task.progress" as const,
+                summary: "Agent chat updated",
+                payload: {
+                  taskId: event.payload.taskId,
+                  ...identityLinkage,
+                  observationSnapshot: true,
+                  observation: event.payload.observation,
+                },
+                turnId: toTurnId(event.turnId) ?? null,
+                ...maybeSequence,
+              },
+            ]
+          : []),
         ...(hasProgressState
           ? [
               {
@@ -2500,6 +2519,15 @@ const make = Effect.gen(function* () {
         case "task.progress":
         case "task.updated":
         case "task.completed": {
+          if (
+            event.type === "task.progress" &&
+            event.payload.observation !== undefined &&
+            event.payload.status === undefined &&
+            event.payload.summary === undefined &&
+            event.payload.lastToolName === undefined &&
+            event.payload.error === undefined
+          )
+            break;
           const payload = event.payload as {
             taskId: string;
             taskType?: string;

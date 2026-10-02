@@ -251,6 +251,7 @@ import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../times
 
 import { SkillChipIcon, SkillInlineText } from "./SkillInlineText";
 import { deriveAgentSpawnSummary } from "./agentSpawnSummary";
+import { SubagentObservation } from "~/components/SubagentObservation";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import {
   buildReviewCommentRenderablePatch,
@@ -4627,7 +4628,7 @@ function AgentSpawnMemberRow({
   const body = [activity?.trim() || null, formatSubagentModelLabel(agent.model, agent.effort)]
     .filter(Boolean)
     .join("\n\n");
-  const canExpand = body.length > 0;
+  const canExpand = body.length > 0 || agent.observation !== null;
   const toggleOpen = () => {
     onToggleEntry?.(open);
     setOpen((value) => !value);
@@ -4686,6 +4687,9 @@ function AgentSpawnMemberRow({
           onPointerDown={stopRowToggle}
         >
           <pre className={toolCallExpandedBodyClassName}>{body}</pre>
+          {agent.observation ? (
+            <SubagentObservation observation={agent.observation} usage={agent.usage} />
+          ) : null}
         </div>
       ) : null}
     </div>

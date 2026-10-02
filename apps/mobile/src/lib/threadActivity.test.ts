@@ -3790,3 +3790,60 @@ it("keeps attachment-only question answers expandable outside mobile work groups
   expect(running[1]).toBe(group);
   expect(running[2]?.type).toBe("work-toggle");
 });
+
+it("keeps Kiro child chat on the spawn card after completion without adding observation rows", () => {
+  const observation = {
+    entries: [{ id: "reply", kind: "assistant", text: "Child reply\nwith details" }],
+    truncated: false,
+    contextUsage: { usedTokens: 4000, capacityTokens: 200000 },
+  };
+  const thread = makeThread({
+    id: ThreadId.make("kiro-chat"),
+    projectId: ProjectId.make("project-1"),
+    title: "Kiro chat",
+    activities: [
+      makeActivity({
+        id: EventId.make("kiro-start"),
+        kind: "task.started",
+        summary: "Review code",
+        createdAt: "2026-10-01T00:00:00.000Z",
+        payload: {
+          taskId: "kiro-child",
+          agentKind: "agent",
+          taskType: "subagent",
+          title: "Review code",
+        },
+      }),
+      makeActivity({
+        id: EventId.make("kiro-done"),
+        kind: "task.completed",
+        summary: "Review done",
+        createdAt: "2026-10-01T00:00:01.000Z",
+        payload: {
+          taskId: "kiro-child",
+          agentKind: "agent",
+          status: "completed",
+          summary: "Review done",
+        },
+      }),
+      makeActivity({
+        id: EventId.make("kiro-observation"),
+        kind: "task.progress",
+        summary: "Agent chat updated",
+        createdAt: "2026-10-01T00:00:02.000Z",
+        payload: {
+          taskId: "kiro-child",
+          agentKind: "agent",
+          observationSnapshot: true,
+          observation,
+        },
+      }),
+    ],
+  });
+  const rows = deriveThreadFeedPresentation(buildThreadFeed(thread), null, new Set());
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    type: "agent-spawn",
+    summary: { tone: "completed", members: [{ title: "Review code", observation, usage: null }] },
+  });
+});

@@ -139,6 +139,10 @@ for custom configuration.
 ## Inspect agent work
 
 On web and desktop, use **Agents** to follow work delegated to subagents.
+For Kiro, expand an agent there or in the conversation to read its recent chat.
+On mobile, expand the subagent card in the conversation. Older text may be
+omitted. Context counts show how much of the agent's context window is occupied;
+output token counts remain unavailable when Kiro does not report them.
 
 Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it

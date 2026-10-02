@@ -417,6 +417,7 @@ function isAgentInternalActivity(activity: OrchestrationThreadActivity): boolean
   if (!payload) {
     return false;
   }
+  if (payload.observationSnapshot === true) return true;
   const isTaskRow =
     activity.kind === "task.started" ||
     activity.kind === "task.progress" ||

@@ -639,12 +639,38 @@ export const RuntimeTaskStatus = Schema.Literals([
 ]);
 export type RuntimeTaskStatus = typeof RuntimeTaskStatus.Type;
 
+export const TASK_OBSERVATION_TEXT_LIMIT = 8_000;
+export const TASK_OBSERVATION_ENTRY_LIMIT = 32;
+
+export const TaskAgentObservation = Schema.Struct({
+  entries: Schema.Array(
+    Schema.Struct({
+      id: TrimmedNonEmptyStringSchema,
+      kind: Schema.Literals(["user", "assistant", "reasoning", "tool"]),
+      text: Schema.String.check(Schema.isMaxLength(TASK_OBSERVATION_TEXT_LIMIT)),
+    }),
+  ).check(Schema.isMaxLength(TASK_OBSERVATION_ENTRY_LIMIT)),
+  truncated: Schema.Boolean,
+  /** ACP context occupancy can decrease; it is not processed or output usage. */
+  contextUsage: Schema.NullOr(
+    Schema.Struct({ usedTokens: NonNegativeInt, capacityTokens: NonNegativeInt }),
+  ),
+}).check(
+  Schema.makeFilter(
+    (observation) =>
+      observation.entries.reduce((length, entry) => length + entry.text.length, 0) <=
+      TASK_OBSERVATION_TEXT_LIMIT,
+  ),
+);
+export type TaskAgentObservation = typeof TaskAgentObservation.Type;
+
 const TaskProgressPayload = Schema.Struct({
   taskId: RuntimeTaskId,
   description: TrimmedNonEmptyStringSchema,
   summary: Schema.optional(TrimmedNonEmptyStringSchema),
   usage: Schema.optional(Schema.Unknown),
   typedUsage: Schema.optional(RuntimeTaskUsage),
+  observation: Schema.optional(TaskAgentObservation),
   lastToolName: Schema.optional(TrimmedNonEmptyStringSchema),
   /** Present on synthesized member/child progress rows that carry state. */
   status: Schema.optional(RuntimeTaskStatus),

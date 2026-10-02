@@ -21,6 +21,7 @@ import {
   ProjectId,
   ProviderItemId,
   RuntimeRequestId,
+  RuntimeTaskId,
   type ServerSettings,
   ThreadId,
   TurnId,
@@ -4680,6 +4681,76 @@ describe("ProviderRuntimeIngestion", () => {
     expect(activity?.summary).toBe("Compacted context 899K → 0 tokens");
     expect(activity?.tone).toBe("info");
     expect(activity?.payload).toMatchObject({ requestId: "message-compact" });
+  });
+
+  it("retains late child observations without restarting background liveness", async () => {
+    const harness = await createHarness();
+    const base = {
+      provider: ProviderDriverKind.make("codex"),
+      threadId: asThreadId("thread-1"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const identity = {
+      taskId: RuntimeTaskId.make("child-observation"),
+      taskType: "subagent",
+      title: "Review",
+    };
+    await harness.emitAndDrain([
+      {
+        ...base,
+        type: "task.started",
+        eventId: asEventId("child-start"),
+        payload: { ...identity, description: "Review" },
+      },
+      {
+        ...base,
+        type: "task.completed",
+        eventId: asEventId("child-done"),
+        payload: { ...identity, status: "completed", summary: "Done" },
+      },
+    ]);
+    expect((await harness.readThreadShell()).backgroundLiveness).toBeNull();
+    const observation = {
+      entries: [{ id: "reply", kind: "assistant" as const, text: "Final child reply" }],
+      truncated: false,
+      contextUsage: { usedTokens: 4000, capacityTokens: 200000 },
+    };
+    await harness.emitAndDrain([
+      {
+        ...base,
+        type: "task.progress",
+        eventId: asEventId("child-chat"),
+        payload: { ...identity, description: "Review", observation },
+      },
+      {
+        ...base,
+        type: "task.progress",
+        eventId: asEventId("child-chat-new"),
+        payload: {
+          ...identity,
+          description: "Review",
+          observation: {
+            ...observation,
+            contextUsage: { usedTokens: 2000, capacityTokens: 200000 },
+          },
+        },
+      },
+    ]);
+    expect((await harness.readThreadShell()).backgroundLiveness).toBeNull();
+    const thread = (await harness.readModel()).threads.find((entry) => entry.id === "thread-1");
+    const snapshots = thread?.activities.filter(
+      (activity) => activity.id === "task-observation:thread-1:child-observation",
+    );
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots?.[0]?.payload).toMatchObject({
+      observationSnapshot: true,
+      observation: { ...observation, contextUsage: { usedTokens: 2000, capacityTokens: 200000 } },
+    });
+    expect(
+      thread?.activities.some(
+        (activity) => activity.id === "task-progress:thread-1:child-observation",
+      ),
+    ).toBe(false);
   });
 
   it("projects Codex task lifecycle chunks into thread activities", async () => {

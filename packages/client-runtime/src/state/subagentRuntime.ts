@@ -17,7 +17,11 @@
  * folding (completion can create an agent; a late start only fills
  * metadata).
  */
-import type { OrchestrationThreadActivity } from "@t3tools/contracts";
+import { TaskAgentObservation, type OrchestrationThreadActivity } from "@t3tools/contracts";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+
+const decodeObservation = Schema.decodeUnknownOption(TaskAgentObservation);
 
 export type RuntimeSubagentStatus =
   | "pending"
@@ -66,6 +70,7 @@ export interface RuntimeSubagent {
   readonly status: RuntimeSubagentStatus;
   readonly activationCount: number;
   readonly usage: SubagentUsage | null;
+  readonly observation: TaskAgentObservation | null;
   readonly progress: string | null;
   readonly lastToolName: string | null;
   readonly result: string | null;
@@ -235,6 +240,7 @@ interface MutableAgent {
   status: RuntimeSubagentStatus;
   activationCount: number;
   usage: SubagentUsage | null;
+  observation: TaskAgentObservation | null;
   progress: string | null;
   lastToolName: string | null;
   result: string | null;
@@ -292,6 +298,7 @@ function getOrCreate(
     status: "pending",
     activationCount: 0,
     usage: null,
+    observation: null,
     progress: null,
     lastToolName: null,
     result: null,
@@ -512,6 +519,11 @@ export function foldSubagentActivities(
         if (!existed && isBackgroundTaskActivity(payload)) break;
         const agent = getOrCreate(agents, taskId, payload, at);
         fillMetadata(agent, payload);
+        if (payload.observationSnapshot === true) {
+          const observation = Option.getOrUndefined(decodeObservation(payload.observation));
+          if (observation) agent.observation = observation;
+          break;
+        }
         if (agent.activationCount === 0) agent.activationCount = 1;
         const explicitStatus = asRuntimeStatus(payload.status);
         if (explicitStatus) {
@@ -889,4 +901,12 @@ export function formatSubagentTokenCount(totalTokens: number): string {
     return `${value >= 100 ? Math.round(value) : value.toFixed(1)}k`;
   }
   return `${(totalTokens / 1_000_000).toFixed(1)}M`;
+}
+
+export function formatSubagentContextUsage(context: TaskAgentObservation["contextUsage"]): string {
+  if (!context) return "Context unavailable";
+  const used = formatSubagentTokenCount(context.usedTokens);
+  return context.capacityTokens > 0
+    ? `Context ${used} / ${formatSubagentTokenCount(context.capacityTokens)} tokens`
+    : `Context ${used} tokens`;
 }
