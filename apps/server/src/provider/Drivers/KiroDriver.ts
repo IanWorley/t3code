@@ -12,7 +12,10 @@ import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { makeKiroTextGeneration } from "../../textGeneration/KiroTextGeneration.ts";
 import { ProviderDriverError } from "../Errors.ts";
-import { makeKiroAdapter } from "../Layers/KiroAdapter.ts";
+import {
+  KiroAdapterV2Driver,
+  type KiroAdapterV2DriverEnv,
+} from "../../orchestration-v2/Adapters/KiroAdapterV2.ts";
 import {
   buildInitialKiroProviderSnapshot,
   checkKiroProviderStatus,
@@ -55,6 +58,7 @@ const UPDATE: ProviderMaintenanceCapabilitiesResolver = {
 };
 
 export type KiroDriverEnv =
+  | KiroAdapterV2DriverEnv
   | BackgroundPolicy.BackgroundPolicy
   | ChildProcessSpawner.ChildProcessSpawner
   | Crypto.Crypto
@@ -98,7 +102,6 @@ export const KiroDriver: ProviderDriver<KiroSettings, KiroDriverEnv> = {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const { cwd } = yield* ServerConfig;
-      const eventLoggers = yield* ProviderEventLoggers;
       const processEnv = mergeProviderInstanceEnvironment(environment);
       const continuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
@@ -121,11 +124,24 @@ export const KiroDriver: ProviderDriver<KiroSettings, KiroDriverEnv> = {
         env: processEnv,
       });
 
-      const adapter = yield* makeKiroAdapter(effectiveConfig, {
-        environment: processEnv,
-        ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
+      const orchestrationAdapter = yield* KiroAdapterV2Driver.create({
         instanceId,
-      });
+        displayName,
+        accentColor,
+        environment,
+        enabled,
+        config,
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProviderDriverError({
+              driver: DRIVER_KIND,
+              instanceId,
+              detail: "Failed to build Kiro orchestration adapter.",
+              cause,
+            }),
+        ),
+      );
       const textGeneration = yield* makeKiroTextGeneration(effectiveConfig, processEnv);
 
       const checkProvider = checkKiroProviderStatus(effectiveConfig, processEnv, cwd).pipe(
@@ -198,7 +214,7 @@ export const KiroDriver: ProviderDriver<KiroSettings, KiroDriverEnv> = {
                     }),
                 ),
               ),
-        adapter,
+        orchestrationAdapter,
         textGeneration,
       } satisfies ProviderInstance;
     }),

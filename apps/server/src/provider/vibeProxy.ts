@@ -116,6 +116,8 @@ export const probeVibeProxy = Effect.fn("probeVibeProxy")(function* (
     Effect.flatMap((json) =>
       Effect.succeed(decodeVibeProxyModelsResponse(json)).pipe(Effect.map(Option.getOrNull)),
     ),
+    Effect.timeoutOption(VIBEPROXY_PROBE_TIMEOUT_MS),
+    Effect.map(Option.getOrNull),
     Effect.orElseSucceed(() => null),
   );
   if (payload === null) {

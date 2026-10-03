@@ -16,7 +16,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Fiber from "effect/Fiber";
 import * as Queue from "effect/Queue";
 import type * as Scope from "effect/Scope";
-import type * as AcpSchema from "effect-acp/schema";
+import type * as AcpSchema from "effect-acp/compat";
 import * as AcpErrors from "effect-acp/errors";
 
 import type { AcpSessionRuntime } from "./AcpSessionRuntime.ts";
@@ -143,6 +143,9 @@ export const makeKiroSubagents = Effect.fn("makeKiroSubagents")(function* <E>(in
   readonly threadId: ThreadId;
   readonly scope: Scope.Scope;
   readonly getTurn: () => { readonly id: TurnId; readonly startedAtMs: number } | undefined;
+  readonly resolveTurn?: Effect.Effect<
+    { readonly id: TurnId; readonly startedAtMs: number } | undefined
+  >;
   readonly makeStamp: () => Effect.Effect<Pick<ProviderRuntimeEvent, "eventId" | "createdAt">, E>;
   readonly publish: (event: ProviderRuntimeEvent) => Effect.Effect<void>;
 }): Effect.fn.Return<KiroSubagents<E>> {
@@ -224,7 +227,8 @@ export const makeKiroSubagents = Effect.fn("makeKiroSubagents")(function* <E>(in
             if (!native || !native.sessionId.trim()) continue;
             let child = children.get(native.sessionId);
             if (!child) {
-              const turn = input.getTurn();
+              const turn =
+                input.resolveTurn === undefined ? input.getTurn() : yield* input.resolveTurn;
               child = {
                 taskId: RuntimeTaskId.make(native.sessionId),
                 linkage: {

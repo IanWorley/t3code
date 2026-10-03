@@ -17,9 +17,27 @@ import { describe, expect } from "vite-plus/test";
 import { makeKiroAcpRuntime } from "./KiroAcpSupport.ts";
 import { makeKiroCommandInventory } from "./KiroAcpCommands.ts";
 import { checkKiroProviderStatus } from "../Layers/KiroProvider.ts";
-import { resolveKiroRequestedModeId } from "../Layers/KiroAdapter.ts";
+import { resolveKiroRequestedModeId } from "../../orchestration-v2/Adapters/KiroAdapterV2.ts";
 
 const decodeKiroSettings = Schema.decodeSync(KiroSettings);
+
+describe("resolveKiroRequestedModeId", () => {
+  it("selects the default agent when a resumed session starts in planner mode", () => {
+    expect(
+      resolveKiroRequestedModeId({
+        interactionMode: "default",
+        modeState: {
+          currentModeId: "kiro_planner",
+          availableModes: [
+            { id: "custom-agent", name: "Custom agent" },
+            { id: "kiro_planner", name: "Planner" },
+          ],
+        },
+        defaultModeId: undefined,
+      }),
+    ).toBe("custom-agent");
+  });
+});
 
 const makeProbeRuntime = Effect.gen(function* () {
   const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
