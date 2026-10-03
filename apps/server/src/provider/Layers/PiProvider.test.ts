@@ -1,93 +1,80 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
-import { PiSettings } from "@t3tools/contracts";
-import { it } from "@effect/vitest";
-import { describe, expect } from "vite-plus/test";
+import * as Sink from "effect/Sink";
+import * as Stream from "effect/Stream";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-import {
-  buildInitialPiProviderSnapshot,
-  buildPiModelsFromConfigOptions,
-  buildPiSlashCommands,
-} from "./PiProvider.ts";
+import { checkPiProviderStatus, MINIMUM_PI_VERSION } from "./PiProvider.ts";
 
-const decodePiSettings = Schema.decodeSync(PiSettings);
+const encoder = new TextEncoder();
 
-describe("buildPiModelsFromConfigOptions", () => {
-  it("maps Pi model and thought-level menus into T3 model capabilities", () => {
-    const models = buildPiModelsFromConfigOptions([
-      {
-        id: "model",
-        category: "model",
-        name: "Model",
-        type: "select",
-        currentValue: "openai/gpt-5.6",
-        options: [
-          { value: "openai/gpt-5.6", name: "OpenAI GPT-5.6" },
-          { value: "anthropic/claude-sonnet-4-6", name: "Anthropic Claude Sonnet 4.6" },
-        ],
-      },
-      {
-        id: "thought_level",
-        category: "thought_level",
-        name: "Thinking",
-        type: "select",
-        currentValue: "high",
-        options: [
-          { value: "medium", name: "Medium" },
-          { value: "high", name: "High" },
-        ],
-      },
-    ]);
-
-    expect(models.map(({ slug, name, isDefault }) => ({ slug, name, isDefault }))).toEqual([
-      { slug: "openai/gpt-5.6", name: "OpenAI GPT-5.6", isDefault: true },
-      {
-        slug: "anthropic/claude-sonnet-4-6",
-        name: "Anthropic Claude Sonnet 4.6",
-        isDefault: false,
-      },
-    ]);
-    expect(models[0]?.capabilities?.optionDescriptors).toEqual([
-      {
-        id: "reasoningEffort",
-        label: "Reasoning",
-        type: "select",
-        currentValue: "high",
-        options: [
-          { id: "medium", label: "Medium" },
-          { id: "high", label: "High", isDefault: true },
-        ],
-      },
-    ]);
+function processHandle(input: {
+  readonly stdout?: string;
+  readonly stderr?: string;
+  readonly exitCode?: number;
+}) {
+  const bytes = (value: string | undefined) =>
+    value === undefined || value.length === 0
+      ? Stream.empty
+      : Stream.succeed(encoder.encode(value));
+  return ChildProcessSpawner.makeHandle({
+    pid: ChildProcessSpawner.ProcessId(900_000_001),
+    exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(input.exitCode ?? 0)),
+    isRunning: Effect.succeed(false),
+    kill: () => Effect.void,
+    unref: Effect.succeed(Effect.void),
+    stdin: Sink.drain,
+    stdout: bytes(input.stdout),
+    stderr: bytes(input.stderr),
+    all: Stream.empty,
+    getInputFd: () => Sink.drain,
+    getOutputFd: () => Stream.empty,
   });
-});
+}
 
-describe("buildInitialPiProviderSnapshot", () => {
-  it.effect("keeps Pi disabled until the user opts in", () =>
+function piProbeSpawner(version: string) {
+  return ChildProcessSpawner.make((command) => {
+    const args = ChildProcess.isStandardCommand(command) ? command.args : [];
+    return Effect.succeed(
+      args.includes("--version")
+        ? processHandle({ stdout: `pi ${version}\n` })
+        : processHandle({ stderr: "RPC startup failed", exitCode: 1 }),
+    );
+  });
+}
+
+const settings = {
+  enabled: true,
+  binaryPath: "pi",
+  launchArgs: "",
+  customModels: [],
+} as const;
+
+describe("PiProvider", () => {
+  it.effect("requires the first published Pi version with entries and settlement hooks", () =>
     Effect.gen(function* () {
-      const snapshot = yield* buildInitialPiProviderSnapshot(decodePiSettings({}));
-      expect(snapshot.enabled).toBe(false);
-      expect(snapshot.status).toBe("disabled");
-      expect(snapshot.displayName).toBe("Pi");
-    }),
+      const snapshot = yield* checkPiProviderStatus(settings).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, piProbeSpawner("0.80.3")),
+      );
+      assert.equal(snapshot.status, "error");
+      assert.equal(snapshot.version, "0.80.3");
+      assert.include(snapshot.message ?? "", `Pi ${MINIMUM_PI_VERSION} or newer`);
+    }).pipe(Effect.provide(NodeServices.layer)),
   );
-});
 
-describe("buildPiSlashCommands", () => {
-  it("maps and deduplicates ACP commands, including Pi extension commands", () => {
-    expect(
-      buildPiSlashCommands([
-        { name: "goal", description: "Manage the active goal" },
-        { name: "skill:ketch", description: "Use the Ketch skill", input: { hint: "task" } },
-        { name: " Goal ", description: "duplicate" },
-      ]),
-    ).toEqual([
-      { name: "goal", description: "Manage the active goal" },
-      {
-        name: "skill:ketch",
-        description: "Use the Ketch skill",
-        input: { hint: "task" },
-      },
-    ]);
-  });
+  it.effect("keeps compatible Pi selectable when optional discovery fails", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* checkPiProviderStatus(settings).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, piProbeSpawner("0.84.3")),
+      );
+      assert.equal(snapshot.status, "ready");
+      assert.equal(snapshot.auth.status, "unknown");
+      assert.deepEqual(
+        snapshot.models.map((model) => model.slug),
+        ["default"],
+      );
+      assert.include(snapshot.message ?? "", "could not refresh its models and commands");
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
 });

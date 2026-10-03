@@ -6,19 +6,18 @@ import {
   TaskAgentObservation,
   TASK_OBSERVATION_TEXT_LIMIT,
   ProviderRuntimeEvent,
-  OrchestrationThreadActivity,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 import * as AcpError from "effect-acp/errors";
-import * as AcpSchema from "effect-acp/schema";
+import * as AcpSchema from "effect-acp/schema-v1";
+import type * as AcpCompat from "effect-acp/compat";
 import * as TestClock from "effect/testing/TestClock";
 import * as Queue from "effect/Queue";
 
-import { foldSubagentActivities } from "../../../../../packages/client-runtime/src/state/subagentRuntime.ts";
-import { runtimeEventToActivities } from "../../orchestration/Layers/ProviderRuntimeIngestion.ts";
-import { projectActivityPayload } from "../../orchestration/ActivityPayloadProjection.ts";
+import { kiroTaskEventToSubagentUpdate } from "../../orchestration-v2/Adapters/KiroAdapterV2.ts";
+import type { AcpAdapterV2SubagentUpdate } from "../../orchestration-v2/Adapters/AcpAdapterV2.ts";
 import capture from "../testFixtures/kiroSubagents.json" with { type: "json" };
 import { makeKiroSubagents } from "./KiroSubagents.ts";
 
@@ -28,9 +27,7 @@ const STARTED_AT = Date.parse("2026-09-30T00:00:00.000Z");
 const LIST_METHOD = "_kiro.dev/subagent/list_update";
 const decodeNotification = Schema.decodeUnknownEffect(AcpSchema.SessionNotification);
 const encodeEvents = Schema.encodeEffect(Schema.fromJsonString(Schema.Array(ProviderRuntimeEvent)));
-const encodeActivities = Schema.encodeEffect(
-  Schema.fromJsonString(Schema.Array(OrchestrationThreadActivity)),
-);
+const encodeActivities = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const observationCodec = Schema.fromJsonString(TaskAgentObservation);
 const encodeObservation = Schema.encodeEffect(observationCodec);
 const decodeObservation = Schema.decodeEffect(observationCodec);
@@ -38,7 +35,7 @@ const decodeObservation = Schema.decodeEffect(observationCodec);
 const makeHarness = Effect.fnUntraced(function* () {
   let list: (params: unknown) => Effect.Effect<void, AcpError.AcpError> = () => Effect.void;
   let update: (
-    params: AcpSchema.SessionNotification,
+    params: AcpCompat.SessionNotification,
   ) => Effect.Effect<void, AcpError.AcpError> = () => Effect.void;
   let turn = { id: FIRST_TURN, startedAtMs: STARTED_AT };
   let sequence = 0;
@@ -89,7 +86,17 @@ const makeHarness = Effect.fnUntraced(function* () {
     notify: (method: string, params: unknown) =>
       method === LIST_METHOD
         ? list(params)
-        : decodeNotification(params).pipe(Effect.flatMap(update)),
+        : decodeNotification(params).pipe(
+            Effect.flatMap((notification) =>
+              notification.update.sessionUpdate === "agent_message_chunk" ||
+              notification.update.sessionUpdate === "agent_thought_chunk" ||
+              notification.update.sessionUpdate === "usage_update" ||
+              notification.update.sessionUpdate === "tool_call" ||
+              notification.update.sessionUpdate === "tool_call_update"
+                ? update({ ...notification, update: notification.update })
+                : Effect.void,
+            ),
+          ),
   };
 });
 
@@ -119,10 +126,21 @@ function summaryUpdate(sessionId: string, completed: boolean) {
 }
 
 function projectedActivities(events: ReadonlyArray<ProviderRuntimeEvent>) {
-  const activities = events.flatMap((event) => runtimeEventToActivities(event));
-  return [...new Map(activities.map((activity) => [activity.id, activity])).values()].map(
-    projectActivityPayload,
-  );
+  const updates = new Map<string, AcpAdapterV2SubagentUpdate>();
+  for (const event of events) {
+    if (
+      event.type === "task.started" ||
+      event.type === "task.progress" ||
+      event.type === "task.updated" ||
+      event.type === "task.completed"
+    ) {
+      updates.set(
+        event.payload.taskId,
+        kiroTaskEventToSubagentUpdate(event, updates.get(event.payload.taskId)),
+      );
+    }
+  }
+  return [...updates.values()];
 }
 
 function textUpdate(text: string, sessionId = "child-one", reasoning = false) {
@@ -162,7 +180,7 @@ it.effect("bounds publication and serialized state for ten interleaved streaming
     const activities = projectedActivities(h.events);
     const snapshot = yield* encodeActivities(activities);
     assert.ok(Buffer.byteLength(snapshot) < MAX_SNAPSHOT_BYTES);
-    const agents = foldSubagentActivities(activities);
+    const agents = activities;
     assert.equal(agents.length, CHILD_COUNT);
     assert.ok(
       agents.every((agent) => agent.observation?.entries.at(-1)?.text.endsWith(" final reply")),
@@ -187,8 +205,8 @@ it.effect(
       assert.equal(h.events.length, count + 1);
       yield* TestClock.adjust("5 seconds");
       assert.equal(h.events.length, count + 1);
-      const agents = foldSubagentActivities(projectedActivities(h.events));
-      assert.equal(agents[0]?.progress, null);
+      const agents = projectedActivities(h.events);
+      assert.equal(agents[0]?.progress, "Running");
       assert.equal(agents[0]?.status, "running");
     }),
 );
@@ -204,7 +222,7 @@ it.effect(
       yield* h.notify("session/update", summaryUpdate("child-one", false));
       yield* h.notify("session/update", summaryUpdate("child-one", true));
       yield* h.notify(LIST_METHOD, { subagents: [nativeChild("terminated")] });
-      let agent = foldSubagentActivities(projectedActivities(h.events))[0];
+      let agent = projectedActivities(h.events)[0];
       assert.equal(agent?.status, "completed");
       assert.equal(
         agent?.observation?.entries.find((entry) => entry.kind === "assistant")?.text,
@@ -212,7 +230,7 @@ it.effect(
       );
       yield* h.notify("session/update", textUpdate("late reply"));
       yield* h.children.close("stopped");
-      agent = foldSubagentActivities(projectedActivities(h.events))[0];
+      agent = projectedActivities(h.events)[0];
       assert.equal(agent?.status, "completed");
       assert.equal(agent?.observation?.entries.at(-1)?.text, "late reply");
     }),
@@ -234,12 +252,11 @@ it.effect(
         });
         yield* TestClock.adjust("1 second");
       }
-      const agent = foldSubagentActivities(projectedActivities(h.events))[0];
+      const agent = projectedActivities(h.events)[0];
       assert.deepStrictEqual(agent?.observation?.contextUsage, {
         usedTokens: 4_000,
         capacityTokens: 200_000,
       });
-      assert.equal(agent?.usage, null);
       assert.equal(agent?.status, "completed");
     }),
 );
@@ -254,9 +271,10 @@ it.effect("ignores replay and root chunks while retaining separate child reasoni
     yield* h.notify("session/update", textUpdate("reply"));
     yield* h.children.close("stopped");
     assert.deepStrictEqual(
-      foldSubagentActivities(projectedActivities(h.events))[0]?.observation?.entries.map(
-        ({ kind, text }) => ({ kind, text }),
-      ),
+      projectedActivities(h.events)[0]?.observation?.entries.map(({ kind, text }) => ({
+        kind,
+        text,
+      })),
       [
         { kind: "user", text: "Reply with alpha" },
         { kind: "reasoning", text: "thinking" },
@@ -273,7 +291,7 @@ it.effect("keeps a bounded Unicode output tail and the task instruction", () =>
     yield* h.notify("session/update", textUpdate("😀".repeat(TASK_OBSERVATION_TEXT_LIMIT)));
     yield* h.notify("session/update", textUpdate(" final answer"));
     yield* h.children.close("stopped");
-    const observation = foldSubagentActivities(projectedActivities(h.events))[0]?.observation;
+    const observation = projectedActivities(h.events)[0]?.observation;
     assert.ok(observation);
     assert.equal(observation.entries[0]?.text, "Reply with alpha");
     assert.equal(observation.truncated, true);
@@ -296,7 +314,7 @@ it.effect(
     Effect.gen(function* () {
       const h = yield* makeHarness();
       for (const notification of capture) yield* h.notify(notification.method, notification.params);
-      const observed = foldSubagentActivities(projectedActivities(h.events));
+      const observed = projectedActivities(h.events);
       assert.deepStrictEqual(
         observed.map((agent) =>
           agent.observation?.entries
@@ -313,23 +331,24 @@ it.effect(
         2,
       );
       assert.equal(h.events.filter((event) => event.type === "task.completed").length, 2);
-      const agents = foldSubagentActivities(
-        h.events.flatMap((event) => runtimeEventToActivities(event)),
-      );
+      const agents = projectedActivities(h.events);
       assert.deepStrictEqual(
-        agents.map(({ id, title, role, status, result }) => ({ id, title, role, status, result })),
+        agents.map(({ nativeTaskId, title, status, result }) => ({
+          id: nativeTaskId,
+          title,
+          status,
+          result,
+        })),
         [
           {
             id: "14c60fe5-3a00-470e-8ac9-85b404431d0c",
             title: "alpha",
-            role: "kiro_default",
             status: "completed",
             result: "alpha",
           },
           {
             id: "5f6692e4-3655-4ed1-91b1-8c70b48c177e",
             title: "beta",
-            role: "kiro_default",
             status: "completed",
             result: 'Replied with "beta" as instructed.',
           },
@@ -374,14 +393,13 @@ it.effect(
     Effect.gen(function* () {
       const h = yield* makeHarness();
       yield* h.notify(LIST_METHOD, { subagents: [nativeChild("terminated")] });
-      let agents = foldSubagentActivities(
-        h.events.flatMap((event) => runtimeEventToActivities(event)),
-      );
+      let agents = projectedActivities(h.events);
       assert.equal(agents[0]?.status, "idle");
       assert.equal(agents[0]?.result, null);
+      assert.equal(agents[0]?.progress, "Agent ended; result unavailable.");
       yield* h.notify("session/update", summaryUpdate("child-one", false));
       yield* h.notify("session/update", summaryUpdate("child-one", true));
-      agents = foldSubagentActivities(h.events.flatMap((event) => runtimeEventToActivities(event)));
+      agents = projectedActivities(h.events);
       assert.equal(agents[0]?.status, "completed");
       assert.equal(agents[0]?.result, "alpha");
     }),
@@ -398,9 +416,7 @@ it.effect(
       yield* h.children.close("interrupted");
       yield* h.children.close("interrupted");
       yield* h.notify(LIST_METHOD, { subagents: [nativeChild("working", "child-three")] });
-      const agents = foldSubagentActivities(
-        h.events.flatMap((event) => runtimeEventToActivities(event)),
-      );
+      const agents = projectedActivities(h.events);
       assert.deepStrictEqual(
         agents.map((agent) => agent.status),
         ["interrupted", "interrupted"],
@@ -444,9 +460,7 @@ it.effect("stops live children on session shutdown while preserving successful r
     yield* h.notify("session/update", summaryUpdate("child-one", true));
     yield* h.notify(LIST_METHOD, { subagents: [nativeChild("terminated")] });
     yield* h.children.close("stopped");
-    const agents = foldSubagentActivities(
-      h.events.flatMap((event) => runtimeEventToActivities(event)),
-    );
+    const agents = projectedActivities(h.events);
     assert.deepStrictEqual(
       agents.map(({ status, result }) => ({ status, result })),
       [

@@ -8,7 +8,9 @@ import {
 import { getProviderOptionDescriptors, getProviderOptionCurrentValue } from "@t3tools/shared/model";
 import { resolveClaudeCatalogEffort, scopeClaudeModelCatalog } from "./ClaudeModelCatalog.ts";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/unstable/http";
 
 import {
@@ -29,6 +31,7 @@ const ENDPOINT: VibeProxyEndpoint = {
   rootUrl: "http://127.0.0.1:8318",
   openAiBaseUrl: "http://127.0.0.1:8318/v1",
 };
+const PROBE_TIMEOUT = "2 seconds";
 
 const BASE_PROVIDER: ServerProvider = {
   instanceId: ProviderInstanceId.make("codex"),
@@ -171,32 +174,30 @@ describe("VibeProxy runtime routing", () => {
     assert.deepStrictEqual(enriched.vibeProxy?.addedModels, ["proxy-only"]);
   });
 
-  for (const { driver, optionId, effort } of [
+  it.each([
     { driver: "codex", optionId: "reasoningEffort", effort: "xhigh" },
     { driver: "claudeAgent", optionId: "effort", effort: "max" },
-  ]) {
-    it(`makes reasoning selectable for every ${driver} proxy model`, () => {
-      const enriched = applyVibeProxyStatus(
-        { ...BASE_PROVIDER, driver: ProviderDriverKind.make(driver) },
-        {
-          enabled: true,
-          endpoint: ENDPOINT.rootUrl,
-          reachable: true,
-          models: ["gpt-existing", "proxy-only"],
-        },
+  ])("makes reasoning selectable for every $driver proxy model", ({ driver, optionId, effort }) => {
+    const enriched = applyVibeProxyStatus(
+      { ...BASE_PROVIDER, driver: ProviderDriverKind.make(driver) },
+      {
+        enabled: true,
+        endpoint: ENDPOINT.rootUrl,
+        reachable: true,
+        models: ["gpt-existing", "proxy-only"],
+      },
+    );
+    for (const model of enriched.models) {
+      const descriptors = getProviderOptionDescriptors({
+        caps: model.capabilities ?? {},
+        selections: [{ id: optionId, value: effort }],
+      });
+      assert.strictEqual(
+        getProviderOptionCurrentValue(descriptors.find((option) => option.id === optionId)),
+        effort,
       );
-      for (const model of enriched.models) {
-        const descriptors = getProviderOptionDescriptors({
-          caps: model.capabilities ?? {},
-          selections: [{ id: optionId, value: effort }],
-        });
-        assert.strictEqual(
-          getProviderOptionCurrentValue(descriptors.find((option) => option.id === optionId)),
-          effort,
-        );
-      }
-    });
-  }
+    }
+  });
 
   it("preserves existing reasoning choices and unrelated capabilities", () => {
     const capabilities = {
@@ -324,5 +325,26 @@ describe("probeVibeProxy", () => {
           "VibeProxy is running, but its model list is unavailable. Check the client API key.",
       });
     }).pipe(Effect.provide(httpClientLayer(() => new Response(null, { status: 401 })))),
+  );
+
+  it.effect("returns when the models response body stalls", () =>
+    Effect.gen(function* () {
+      const probe = yield* probeVibeProxy(ENDPOINT, undefined).pipe(Effect.forkChild);
+      yield* TestClock.adjust(PROBE_TIMEOUT);
+
+      assert.deepStrictEqual(yield* Fiber.join(probe), {
+        enabled: true,
+        endpoint: ENDPOINT.rootUrl,
+        reachable: true,
+        models: [],
+        message: "VibeProxy returned an invalid model list.",
+      });
+    }).pipe(
+      Effect.provide(
+        httpClientLayer(
+          () => new Response(new ReadableStream({ start: () => undefined }), { status: 200 }),
+        ),
+      ),
+    ),
   );
 });

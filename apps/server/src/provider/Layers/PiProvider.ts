@@ -1,261 +1,278 @@
+/**
+ * PiProvider — snapshot/probe layer for the Pi coding agent.
+ *
+ * Health is probed with `pi --version`. Models, the user's default model, and
+ * the user's commands (extension slash commands, prompt templates, skills)
+ * are discovered through a short-lived ephemeral RPC session
+ * (`pi --mode rpc --no-session`), so everything the user configured in
+ * `~/.pi/agent` — custom providers, models.json entries, extensions, skills —
+ * shows up in T3 without any hardcoded catalog.
+ */
 import {
   type CustomModelSetting,
-  type ModelCapabilities,
   type PiSettings,
+  type ServerProvider,
   type ServerProviderModel,
-  type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
-import { createModelCapabilities } from "@t3tools/shared/model";
 import { causeErrorTag } from "@t3tools/shared/observability";
-import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
-import { ChildProcessSpawner } from "effect/unstable/process";
-import * as EffectAcpErrors from "effect-acp/errors";
-import type * as EffectAcpSchema from "effect-acp/schema";
+import * as Result from "effect/Result";
+import { HttpClient } from "effect/unstable/http";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
-  deletePiAcpSession,
-  makePiAcpRuntime,
-  PI_REASONING_OPTION_ID,
-} from "../acp/PiAcpSupport.ts";
+  buildPiRpcLaunch,
+  resolvePiLaunchArgs,
+} from "../../orchestration-v2/Adapters/piT3McpInjection.ts";
+import {
+  makePiRpcConnection,
+  piRecordField as recordField,
+  piRecordString as recordString,
+} from "../../orchestration-v2/Adapters/PiRpc.ts";
 import {
   buildServerProvider,
   isCommandMissingCause,
+  parseGenericCliVersion,
   providerModelsFromSettings,
+  spawnAndCollect,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
+import {
+  enrichProviderSnapshotWithVersionAdvisory,
+  type ProviderMaintenanceCapabilities,
+} from "../providerMaintenance.ts";
+import {
+  EMPTY_PI_MODEL_CAPABILITIES,
+  thinkingCapabilitiesForPiModel,
+} from "./piThinkingCapabilities.ts";
+import {
+  parsePiDiscoveredCommands,
+  withPiBuiltinSlashCommands,
+  type PiDiscoveredCommands,
+} from "../PiCommands.ts";
 
 const PI_PRESENTATION = {
   displayName: "Pi",
-  badgeLabel: "Early Access",
   showInteractionModeToggle: false,
+  supportedRuntimeModes: ["approval-required", "auto-accept-edits", "full-access"],
+  // The adapter reports context usage from Pi's streaming usage while a
+  // turn runs, so clients can reserve the meter before the first settle.
+  reportsContextWindow: true,
+  requiresNewThreadForModelChange: false,
 } as const;
-const PI_ACP_MODEL_DISCOVERY_TIMEOUT_MS = 15_000;
-const PI_ACP_COMMAND_DISCOVERY_TIMEOUT_MS = 2_000;
-const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({ optionDescriptors: [] });
-const DEFAULT_PI_MODELS: ReadonlyArray<ServerProviderModel> = [
-  {
-    slug: "default",
-    name: "Pi default",
-    isCustom: false,
-    isDefault: true,
-    capabilities: EMPTY_CAPABILITIES,
-  },
-];
-const isAcpRequestError = Schema.is(EffectAcpErrors.AcpRequestError);
-const isAcpSpawnError = Schema.is(EffectAcpErrors.AcpSpawnError);
+
+const VERSION_PROBE_TIMEOUT_MS = 4_000;
+const PI_RPC_DISCOVERY_TIMEOUT_MS = 15_000;
+/**
+ * get_entries arrived in 0.80.3 and agent_settled landed in source at 0.80.4.
+ * Version 0.80.5 was the first published package containing both hooks. T3
+ * needs them for rollback boundaries and reliable turn terminalization.
+ */
+export const MINIMUM_PI_VERSION = "0.80.5";
+
+/** Deferring to the user's own settings.json default model. */
+const PI_DEFAULT_MODEL: ServerProviderModel = {
+  slug: "default",
+  name: "Pi default",
+  isCustom: false,
+  capabilities: EMPTY_PI_MODEL_CAPABILITIES,
+};
+
+interface PiDiscovery extends PiDiscoveredCommands {
+  readonly models: ReadonlyArray<ServerProviderModel>;
+  readonly authenticated: boolean;
+}
 
 function piModelsFromSettings(
   customModels: ReadonlyArray<CustomModelSetting> | undefined,
-  discoveredModels: ReadonlyArray<ServerProviderModel> = DEFAULT_PI_MODELS,
+  discovered: ReadonlyArray<ServerProviderModel> = [],
 ): ReadonlyArray<ServerProviderModel> {
-  return providerModelsFromSettings(discoveredModels, customModels ?? [], EMPTY_CAPABILITIES);
-}
-
-function flattenSelectOptions(
-  option: Extract<EffectAcpSchema.SessionConfigOption, { readonly type: "select" }>,
-) {
-  return option.options.flatMap((entry) => ("value" in entry ? [entry] : entry.options));
-}
-
-function buildPiModelCapabilities(
-  configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption>,
-): ModelCapabilities {
-  const thoughtLevel = configOptions.find(
-    (option) => option.type === "select" && option.category === "thought_level",
+  return providerModelsFromSettings(
+    [PI_DEFAULT_MODEL, ...discovered],
+    customModels ?? [],
+    EMPTY_PI_MODEL_CAPABILITIES,
   );
-  if (!thoughtLevel || thoughtLevel.type !== "select") {
-    return EMPTY_CAPABILITIES;
-  }
-  const options = flattenSelectOptions(thoughtLevel).flatMap((option) => {
-    const id = option.value.trim();
-    if (!id) return [];
-    const description = option.description?.trim();
-    return [
-      {
-        id,
-        label: option.name.trim() || id,
-        ...(description ? { description } : {}),
-        ...(id === thoughtLevel.currentValue ? { isDefault: true } : {}),
-      },
-    ];
-  });
-  if (options.length === 0) {
-    return EMPTY_CAPABILITIES;
-  }
-  return createModelCapabilities({
-    optionDescriptors: [
-      {
-        id: PI_REASONING_OPTION_ID,
-        label: "Reasoning",
-        type: "select",
-        options,
-        currentValue: thoughtLevel.currentValue,
-      },
-    ],
-  });
 }
 
-export function buildPiModelsFromConfigOptions(
-  configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption>,
+function parseDiscoveredModels(
+  data: unknown,
+  defaultThinkingLevel: unknown,
 ): ReadonlyArray<ServerProviderModel> {
-  const modelOption = configOptions.find(
-    (option) => option.type === "select" && option.category === "model",
-  );
-  if (!modelOption || modelOption.type !== "select") {
-    return [];
-  }
-  const capabilities = buildPiModelCapabilities(configOptions);
+  const models = recordField(data, "models");
+  if (!Array.isArray(models)) return [];
   const seen = new Set<string>();
-  return flattenSelectOptions(modelOption).flatMap((option) => {
-    const slug = option.value.trim();
-    if (!slug || seen.has(slug)) return [];
+  const parsed: Array<ServerProviderModel> = [];
+  for (const model of models) {
+    const provider = recordString(model, "provider");
+    const id = recordString(model, "id");
+    if (provider === undefined || id === undefined) continue;
+    const slug = `${provider}/${id}`;
+    if (seen.has(slug)) continue;
     seen.add(slug);
-    return [
-      {
-        slug,
-        name: option.name.trim() || slug,
-        isCustom: false,
-        isDefault: slug === modelOption.currentValue,
-        capabilities,
-      },
-    ];
-  });
+    parsed.push({
+      slug,
+      name: recordString(model, "name") ?? slug,
+      isCustom: false,
+      capabilities: thinkingCapabilitiesForPiModel(model, defaultThinkingLevel),
+    });
+  }
+  return parsed;
 }
 
-export function buildPiSlashCommands(
-  commands: ReadonlyArray<EffectAcpSchema.AvailableCommand>,
-): ReadonlyArray<ServerProviderSlashCommand> {
-  const seen = new Set<string>();
-  return commands.flatMap((command) => {
-    const name = command.name.trim();
-    const normalizedName = name.toLowerCase();
-    if (!name || seen.has(normalizedName)) return [];
-    seen.add(normalizedName);
+const discoverPiViaRpc = (
+  piSettings: PiSettings,
+  environment: NodeJS.ProcessEnv,
+  launchArgs: ReadonlyArray<string>,
+  cwd?: string,
+) =>
+  Effect.gen(function* () {
+    const launch = buildPiRpcLaunch({
+      launchArgs,
+      environment,
+      mcpSession: undefined,
+      extensionPath: undefined,
+      ephemeral: true,
+    });
+    const connection = yield* makePiRpcConnection({
+      command: piSettings.binaryPath || "pi",
+      args: launch.args,
+      cwd,
+      env: launch.env,
+    });
+    yield* Stream.fromQueue(connection.events).pipe(
+      Stream.runDrain,
+      Effect.ignore,
+      Effect.forkScoped,
+    );
+    const stateData = yield* connection.request({ type: "get_state" });
+    const modelsData = yield* connection.request({ type: "get_available_models" });
+    const commandsData = yield* connection
+      .request({ type: "get_commands" })
+      .pipe(Effect.orElseSucceed(() => undefined));
+    const discoveredModels = parseDiscoveredModels(
+      modelsData,
+      recordString(stateData, "thinkingLevel"),
+    );
+    const { slashCommands, skills } = parsePiDiscoveredCommands(commandsData);
+    return {
+      models: discoveredModels,
+      slashCommands: withPiBuiltinSlashCommands(slashCommands),
+      skills,
+      authenticated: discoveredModels.length > 0,
+    } satisfies PiDiscovery;
+  }).pipe(Effect.scoped);
 
-    const description = command.description.trim();
-    const inputHint = command.input?.hint.trim();
-    return [
-      {
-        name,
-        ...(description ? { description } : {}),
-        ...(inputHint ? { input: { hint: inputHint } } : {}),
-      },
-    ];
+const runPiVersionCommand = (piSettings: PiSettings, environment: NodeJS.ProcessEnv) =>
+  Effect.gen(function* () {
+    const command = piSettings.binaryPath || "pi";
+    const spawnCommand = yield* resolveSpawnCommand(command, ["--version"], {
+      env: environment,
+    });
+    return yield* spawnAndCollect(
+      command,
+      ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+        env: environment,
+        shell: spawnCommand.shell,
+      }),
+    );
   });
-}
 
 export function buildInitialPiProviderSnapshot(
-  settings: PiSettings,
+  piSettings: PiSettings,
 ): Effect.Effect<ServerProviderDraft> {
   return Effect.gen(function* () {
-    const checkedAt = DateTime.formatIso(yield* DateTime.now);
-    const enabled = settings.enabled;
+    const checkedAt = yield* Effect.map(DateTime.now, DateTime.formatIso);
+    const models = piModelsFromSettings(piSettings.customModels);
+    if (!piSettings.enabled) {
+      return buildServerProvider({
+        presentation: PI_PRESENTATION,
+        enabled: false,
+        checkedAt,
+        models,
+        probe: {
+          installed: false,
+          version: null,
+          status: "warning",
+          auth: { status: "unknown" },
+          message: "Pi is disabled in T3 Code settings.",
+        },
+      });
+    }
     return buildServerProvider({
       presentation: PI_PRESENTATION,
-      enabled,
+      enabled: true,
       checkedAt,
-      models: piModelsFromSettings(settings.customModels),
-      probe: enabled
-        ? {
-            installed: true,
-            version: null,
-            status: "warning",
-            auth: { status: "unknown" },
-            message: "Checking Pi ACP availability...",
-          }
-        : {
-            installed: false,
-            version: null,
-            status: "warning",
-            auth: { status: "unknown" },
-            message: "Pi is disabled in T3 Code settings.",
-          },
+      models,
+      probe: {
+        installed: true,
+        version: null,
+        status: "warning",
+        auth: { status: "unknown" },
+        message: "Checking Pi CLI availability...",
+      },
     });
   });
-}
-
-function isMissingPiAcp(error: EffectAcpErrors.AcpError): boolean {
-  return isAcpSpawnError(error) && isCommandMissingCause(error.cause);
-}
-
-function isPiAuthenticationError(error: EffectAcpErrors.AcpError): boolean {
-  if (!isAcpRequestError(error)) return false;
-  const message = error.errorMessage.toLowerCase();
-  return (
-    message.includes("auth") ||
-    message.includes("api key") ||
-    message.includes("log in") ||
-    message.includes("login")
-  );
 }
 
 export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function* (
-  settings: PiSettings,
+  piSettings: PiSettings,
   environment: NodeJS.ProcessEnv = process.env,
-  cwd: string = process.cwd(),
-): Effect.fn.Return<
-  ServerProviderDraft,
-  never,
-  ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto
-> {
+  cwd?: string,
+): Effect.fn.Return<ServerProviderDraft, never, ChildProcessSpawner.ChildProcessSpawner> {
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
-  const fallbackModels = piModelsFromSettings(settings.customModels);
-  if (!settings.enabled) {
-    return yield* buildInitialPiProviderSnapshot(settings);
-  }
+  const fallbackModels = piModelsFromSettings(piSettings.customModels);
 
-  const discovery = yield* Effect.gen(function* () {
-    const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const runtime = yield* makePiAcpRuntime({
-      piSettings: settings,
-      environment,
-      childProcessSpawner,
-      cwd,
-      clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
-    });
-    const started = yield* runtime.start();
-    yield* Effect.addFinalizer(() => deletePiAcpSession(runtime, started.sessionId));
-    const availableCommands = yield* runtime.awaitAvailableCommands.pipe(
-      Effect.timeoutOption(PI_ACP_COMMAND_DISCOVERY_TIMEOUT_MS),
-      Effect.map(Option.getOrElse(() => [])),
-    );
-    return {
-      version: started.initializeResult.agentInfo?.version?.trim() || null,
-      models: buildPiModelsFromConfigOptions(started.sessionSetupResult.configOptions ?? []),
-      slashCommands: buildPiSlashCommands(availableCommands),
-    };
-  }).pipe(Effect.scoped, Effect.timeoutOption(PI_ACP_MODEL_DISCOVERY_TIMEOUT_MS), Effect.exit);
-
-  if (Exit.isSuccess(discovery) && Option.isSome(discovery.value)) {
-    const result = discovery.value.value;
+  if (!piSettings.enabled) {
     return buildServerProvider({
       presentation: PI_PRESENTATION,
-      enabled: true,
+      enabled: false,
       checkedAt,
-      models: piModelsFromSettings(
-        settings.customModels,
-        result.models.length > 0 ? result.models : DEFAULT_PI_MODELS,
-      ),
-      slashCommands: result.slashCommands,
+      models: fallbackModels,
       probe: {
-        installed: true,
-        version: result.version,
-        status: "ready",
-        auth: { status: "authenticated" },
+        installed: false,
+        version: null,
+        status: "warning",
+        auth: { status: "unknown" },
+        message: "Pi is disabled in T3 Code settings.",
       },
     });
   }
 
-  if (Exit.isSuccess(discovery)) {
+  const versionResult = yield* runPiVersionCommand(piSettings, environment).pipe(
+    Effect.timeoutOption(VERSION_PROBE_TIMEOUT_MS),
+    Effect.result,
+  );
+
+  if (Result.isFailure(versionResult)) {
+    const error = versionResult.failure;
+    yield* Effect.logWarning("Pi CLI health check failed.", { errorTag: error._tag });
     return buildServerProvider({
       presentation: PI_PRESENTATION,
-      enabled: true,
+      enabled: piSettings.enabled,
+      checkedAt,
+      models: fallbackModels,
+      probe: {
+        installed: !isCommandMissingCause(error),
+        version: null,
+        status: "error",
+        auth: { status: "unknown" },
+        message: isCommandMissingCause(error)
+          ? "Pi CLI (`pi`) is not installed or not on PATH. Install with `npm install -g @earendil-works/pi-coding-agent`."
+          : "Failed to execute Pi CLI health check.",
+      },
+    });
+  }
+
+  if (Option.isNone(versionResult.success)) {
+    return buildServerProvider({
+      presentation: PI_PRESENTATION,
+      enabled: piSettings.enabled,
       checkedAt,
       models: fallbackModels,
       probe: {
@@ -263,32 +280,162 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
         version: null,
         status: "error",
         auth: { status: "unknown" },
-        message: `Pi ACP startup timed out after ${PI_ACP_MODEL_DISCOVERY_TIMEOUT_MS}ms.`,
+        message: "Pi CLI is installed but timed out while running `pi --version`.",
       },
     });
   }
 
-  const error = Cause.findErrorOption(discovery.cause).pipe(Option.getOrUndefined);
-  yield* Effect.logWarning("Pi ACP model discovery failed", {
-    errorTag: causeErrorTag(discovery.cause),
-  });
-  const missing = error !== undefined && isMissingPiAcp(error);
-  const unauthenticated = error !== undefined && isPiAuthenticationError(error);
+  const versionOutput = versionResult.success.value;
+  const version = parseGenericCliVersion(`${versionOutput.stdout}\n${versionOutput.stderr}`);
+  if (versionOutput.code !== 0) {
+    return buildServerProvider({
+      presentation: PI_PRESENTATION,
+      enabled: piSettings.enabled,
+      checkedAt,
+      models: fallbackModels,
+      probe: {
+        installed: true,
+        version,
+        status: "error",
+        auth: { status: "unknown" },
+        message: "Pi CLI is installed but failed to run.",
+      },
+    });
+  }
+
+  if (version === null) {
+    return buildServerProvider({
+      presentation: PI_PRESENTATION,
+      enabled: piSettings.enabled,
+      checkedAt,
+      models: fallbackModels,
+      probe: {
+        installed: true,
+        version: null,
+        status: "error",
+        auth: { status: "unknown" },
+        message: `T3 Code could not determine the Pi version. Pi ${MINIMUM_PI_VERSION} or newer is required.`,
+      },
+    });
+  }
+
+  if (compareSemverVersions(version, MINIMUM_PI_VERSION) < 0) {
+    return buildServerProvider({
+      presentation: PI_PRESENTATION,
+      enabled: piSettings.enabled,
+      checkedAt,
+      models: fallbackModels,
+      probe: {
+        installed: true,
+        version,
+        status: "error",
+        auth: { status: "unknown" },
+        message: `Pi ${version} is unsupported. Update to Pi ${MINIMUM_PI_VERSION} or newer.`,
+      },
+    });
+  }
+
+  const resolvedLaunchArgs = resolvePiLaunchArgs(piSettings.launchArgs);
+  if (!resolvedLaunchArgs.ok) {
+    return buildServerProvider({
+      presentation: PI_PRESENTATION,
+      enabled: piSettings.enabled,
+      checkedAt,
+      models: fallbackModels,
+      probe: {
+        installed: true,
+        version,
+        status: "error",
+        auth: { status: "unknown" },
+        message: resolvedLaunchArgs.message,
+      },
+    });
+  }
+
+  const discoveryExit = yield* discoverPiViaRpc(
+    piSettings,
+    environment,
+    resolvedLaunchArgs.args,
+    cwd,
+  ).pipe(Effect.timeoutOption(PI_RPC_DISCOVERY_TIMEOUT_MS), Effect.exit);
+  if (Exit.isFailure(discoveryExit)) {
+    yield* Effect.logWarning("Pi RPC discovery failed.", {
+      errorTag: causeErrorTag(discoveryExit.cause),
+    });
+    return buildServerProvider({
+      presentation: PI_PRESENTATION,
+      enabled: piSettings.enabled,
+      checkedAt,
+      models: fallbackModels,
+      probe: {
+        installed: true,
+        version,
+        status: "ready",
+        auth: { status: "unknown" },
+        message:
+          "Pi is available, but T3 Code could not refresh its models and commands. The live session will retry startup.",
+      },
+    });
+  }
+  if (Option.isNone(discoveryExit.value)) {
+    return buildServerProvider({
+      presentation: PI_PRESENTATION,
+      enabled: piSettings.enabled,
+      checkedAt,
+      models: fallbackModels,
+      probe: {
+        installed: true,
+        version,
+        status: "ready",
+        auth: { status: "unknown" },
+        message:
+          "Pi is available, but model and command discovery needs interactive input. The live session will handle it.",
+      },
+    });
+  }
+
+  const discovery = discoveryExit.value.value;
+  const models = piModelsFromSettings(piSettings.customModels, discovery.models);
   return buildServerProvider({
     presentation: PI_PRESENTATION,
-    enabled: true,
+    enabled: piSettings.enabled,
     checkedAt,
-    models: fallbackModels,
+    models,
+    slashCommands: discovery.slashCommands,
+    skills: discovery.skills,
     probe: {
-      installed: !missing,
-      version: null,
-      status: "error",
-      auth: { status: unauthenticated ? "unauthenticated" : "unknown" },
-      message: missing
-        ? "Pi ACP (`pi-acp`) is not installed or not on PATH."
-        : unauthenticated
-          ? "Pi has no authenticated model provider. Configure Pi in a terminal and try again."
-          : "Pi ACP startup failed. Check server logs for details.",
+      installed: true,
+      version,
+      status: discovery.authenticated ? "ready" : "warning",
+      auth: { status: discovery.authenticated ? "authenticated" : "unauthenticated", type: "pi" },
+      ...(discovery.authenticated
+        ? {}
+        : {
+            message:
+              "Pi has no usable models. Run `pi` in a terminal and use /login, or configure an API key in ~/.pi/agent.",
+          }),
     },
   });
 });
+
+export const enrichPiSnapshot = (input: {
+  readonly snapshot: ServerProvider;
+  readonly maintenanceCapabilities: ProviderMaintenanceCapabilities;
+  readonly enableProviderUpdateChecks?: boolean;
+  readonly publishSnapshot: (snapshot: ServerProvider) => Effect.Effect<void>;
+  readonly httpClient: HttpClient.HttpClient;
+}): Effect.Effect<void> => {
+  const { snapshot, publishSnapshot } = input;
+  return enrichProviderSnapshotWithVersionAdvisory(snapshot, input.maintenanceCapabilities, {
+    enableProviderUpdateChecks: input.enableProviderUpdateChecks,
+  }).pipe(
+    Effect.provideService(HttpClient.HttpClient, input.httpClient),
+    Effect.flatMap((enrichedSnapshot) => publishSnapshot(enrichedSnapshot)),
+    Effect.catchCause((cause) =>
+      Effect.logWarning("Pi version advisory enrichment failed", {
+        errorTag: causeErrorTag(cause),
+      }),
+    ),
+    Effect.asVoid,
+  );
+};
