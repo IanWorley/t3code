@@ -75,18 +75,28 @@ export function kiroTaskEventToSubagentUpdate(
 ): AcpAdapterV2SubagentUpdate {
   const payload = event.payload;
   const status = "status" in payload ? payload.status : undefined;
+  const observationOnly =
+    event.type === "task.progress" &&
+    "observation" in payload &&
+    payload.observation !== undefined &&
+    status === undefined &&
+    payload.summary === undefined;
+  const progress =
+    event.type !== "task.started" &&
+    !observationOnly &&
+    "description" in payload &&
+    payload.description !== undefined
+      ? payload.description
+      : "summary" in payload && payload.summary !== undefined && event.type !== "task.completed"
+        ? payload.summary
+        : undefined;
   return {
     ...previous,
-    observationOnly:
-      event.type === "task.progress" &&
-      "observation" in payload &&
-      payload.observation !== undefined &&
-      status === undefined &&
-      payload.summary === undefined,
+    observationOnly,
     nativeTaskId: payload.taskId,
     childSessionId: payload.taskId,
     prompt:
-      "description" in payload
+      event.type === "task.started" && "description" in payload
         ? (payload.description ?? previous?.prompt ?? "")
         : (previous?.prompt ?? ""),
     title: payload.title ?? previous?.title ?? "Kiro subagent",
@@ -112,9 +122,7 @@ export function kiroTaskEventToSubagentUpdate(
     ...("observation" in payload && payload.observation !== undefined
       ? { observation: payload.observation }
       : {}),
-    ...("summary" in payload && payload.summary !== undefined && event.type !== "task.completed"
-      ? { progress: payload.summary }
-      : {}),
+    ...(progress === undefined ? {} : { progress }),
   };
 }
 
@@ -124,7 +132,13 @@ export function resolveKiroRequestedModeId(input: {
   readonly defaultModeId: string | undefined;
 }): string | undefined {
   if (input.modeState === undefined) return undefined;
-  if (input.interactionMode !== "plan") return input.defaultModeId;
+  if (input.interactionMode !== "plan") {
+    if (input.defaultModeId !== undefined) return input.defaultModeId;
+    if (input.modeState.currentModeId !== KIRO_PLANNER_MODE_ID) {
+      return input.modeState.currentModeId;
+    }
+    return input.modeState.availableModes.find((mode) => mode.id !== KIRO_PLANNER_MODE_ID)?.id;
+  }
   const modes = input.modeState.availableModes;
   return (
     modes.find((mode) => mode.id === KIRO_PLANNER_MODE_ID)?.id ??
@@ -157,7 +171,16 @@ export function makeKiroAdapterV2(options: KiroAdapterV2Options) {
     applySessionMode: ({ runtime, runtimePolicy }) =>
       Effect.gen(function* () {
         const modeState = yield* runtime.getModeState;
-        if (!defaultModes.has(runtime)) defaultModes.set(runtime, modeState?.currentModeId);
+        if (!defaultModes.has(runtime)) {
+          defaultModes.set(
+            runtime,
+            resolveKiroRequestedModeId({
+              interactionMode: "default",
+              modeState,
+              defaultModeId: undefined,
+            }),
+          );
+        }
         const mode = resolveKiroRequestedModeId({
           interactionMode: runtimePolicy.interactionMode,
           modeState,

@@ -21,6 +21,24 @@ import { resolveKiroRequestedModeId } from "../../orchestration-v2/Adapters/Kiro
 
 const decodeKiroSettings = Schema.decodeSync(KiroSettings);
 
+describe("resolveKiroRequestedModeId", () => {
+  it("selects the default agent when a resumed session starts in planner mode", () => {
+    expect(
+      resolveKiroRequestedModeId({
+        interactionMode: "default",
+        modeState: {
+          currentModeId: "kiro_planner",
+          availableModes: [
+            { id: "custom-agent", name: "Custom agent" },
+            { id: "kiro_planner", name: "Planner" },
+          ],
+        },
+        defaultModeId: undefined,
+      }),
+    ).toBe("custom-agent");
+  });
+});
+
 const makeProbeRuntime = Effect.gen(function* () {
   const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   return yield* makeKiroAcpRuntime({

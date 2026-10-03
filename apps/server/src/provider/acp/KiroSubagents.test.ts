@@ -206,7 +206,7 @@ it.effect(
       yield* TestClock.adjust("5 seconds");
       assert.equal(h.events.length, count + 1);
       const agents = projectedActivities(h.events);
-      assert.equal(agents[0]?.progress, undefined);
+      assert.equal(agents[0]?.progress, "Running");
       assert.equal(agents[0]?.status, "running");
     }),
 );
@@ -396,6 +396,7 @@ it.effect(
       let agents = projectedActivities(h.events);
       assert.equal(agents[0]?.status, "idle");
       assert.equal(agents[0]?.result, null);
+      assert.equal(agents[0]?.progress, "Agent ended; result unavailable.");
       yield* h.notify("session/update", summaryUpdate("child-one", false));
       yield* h.notify("session/update", summaryUpdate("child-one", true));
       agents = projectedActivities(h.events);
