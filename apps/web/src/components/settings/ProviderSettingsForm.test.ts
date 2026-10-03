@@ -35,6 +35,34 @@ describe("ProviderSettingsForm helpers", () => {
     });
   });
 
+  it("uses a dedicated environment field instead of legacy Cursor CLI settings", () => {
+    const cursor = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("cursor")];
+
+    expect(cursor).toBeDefined();
+    expect(deriveProviderSettingsFields(cursor!)).toEqual([]);
+    expect(cursor?.environmentFields).toEqual([
+      {
+        name: "CURSOR_API_KEY",
+        label: "Cursor API key",
+        description: "Optional. Overrides browser sign-in for this provider.",
+        placeholder: "Paste API key",
+        sensitive: true,
+      },
+    ]);
+  });
+
+  it("exposes ACP Registry as an instance-only configurable driver", () => {
+    const acpRegistry = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("acpRegistry")];
+
+    expect(acpRegistry).toBeDefined();
+    expect(acpRegistry?.hasDefaultInstance).toBe(false);
+    expect(deriveProviderSettingsFields(acpRegistry!).map((field) => field.key)).toEqual([
+      "agentId",
+      "commandPath",
+      "authMethodId",
+    ]);
+  });
+
   it("derives a select control with its choices for the Antigravity sign-in method", () => {
     const antigravity = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("antigravity")];
     expect(antigravity).toBeDefined();
@@ -56,6 +84,29 @@ describe("ProviderSettingsForm helpers", () => {
       "agent-platform",
     ]);
     expect(fields.find((field) => field.key === "apiKey")?.control).toBe("password");
+  });
+
+  it("offers both Pi transports and preserves the configured adapter path when switching", () => {
+    const pi = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("pi")];
+    expect(pi).toBeDefined();
+    const transport = deriveProviderSettingsFields(pi!).find((field) => field.key === "transport");
+    expect(transport).toMatchObject({
+      control: "select",
+      options: [
+        { value: "rpc", label: "Native RPC" },
+        { value: "acp", label: "ACP adapter" },
+      ],
+    });
+    expect(
+      nextProviderConfigWithFieldValue(
+        { binaryPath: "/usr/local/bin/pi-acp", transport: "rpc" },
+        transport!,
+        "acp",
+      ),
+    ).toEqual({
+      binaryPath: "/usr/local/bin/pi-acp",
+      transport: "acp",
+    });
   });
 
   it("shows the auto-compaction threshold for Claude providers", () => {

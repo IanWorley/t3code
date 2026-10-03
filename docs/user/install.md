@@ -121,6 +121,7 @@ computer.
 | Kiro        | Install [Kiro CLI](https://kiro.dev/docs/getting-started/installation/), then run `kiro-cli login`.                                                       |
 | Pi          | Install Pi and its ACP adapter; see [Pi setup](./providers-pi.md).                                                                                        |
 | Antigravity | Install and sign in with Google from T3 Code's provider settings.                                                                                         |
+| Pi          | Install [Pi](https://pi.dev), then run `pi` once to finish its login or API-key setup.                                                                    |
 
 Provider CLIs must be on the server's `PATH`. If T3 Code cannot find one, set its
 **Binary path** in provider settings, especially when using a version manager.
@@ -147,8 +148,8 @@ base URL. Mark secret values as sensitive; after saving, T3 Code does not displa
 their original values.
 
 For provider-specific setup and accounts, see [Codex](./providers-codex.md),
-[Claude](./providers-claude.md), [OpenCode](./providers-opencode.md), and
-[Antigravity](./providers-antigravity.md).
+[Claude](./providers-claude.md), [OpenCode](./providers-opencode.md),
+[Antigravity](./providers-antigravity.md), and [Pi](./providers-pi.md).
 
 Kiro exposes its available models and Default and Planner workflows through ACP. T3 Code refreshes
 those choices from the installed CLI, so the model list can change when Kiro updates. Kiro's ACP

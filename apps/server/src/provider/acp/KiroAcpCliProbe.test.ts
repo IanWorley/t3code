@@ -17,7 +17,7 @@ import { describe, expect } from "vite-plus/test";
 import { makeKiroAcpRuntime } from "./KiroAcpSupport.ts";
 import { makeKiroCommandInventory } from "./KiroAcpCommands.ts";
 import { checkKiroProviderStatus } from "../Layers/KiroProvider.ts";
-import { resolveKiroRequestedModeId } from "../Layers/KiroAdapter.ts";
+import { resolveKiroRequestedModeId } from "../../orchestration-v2/Adapters/KiroAdapterV2.ts";
 
 const decodeKiroSettings = Schema.decodeSync(KiroSettings);
 

@@ -1,0 +1,283 @@
+import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
+import {
+  EventId,
+  KiroSettings,
+  ProviderDriverKind,
+  ThreadId,
+  type ProviderRuntimeEvent,
+  type OrchestrationV2ProviderCapabilities,
+} from "@t3tools/contracts";
+import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
+import type { AcpSessionModeState } from "../../provider/acp/AcpRuntimeModel.ts";
+import type { ProviderInteractionMode } from "@t3tools/contracts";
+import { ChildProcessSpawner } from "effect/unstable/process";
+import * as ServerConfig from "../../config.ts";
+import { makeAcpNativeLoggerFactory } from "../../provider/acp/AcpNativeLogging.ts";
+import {
+  applyKiroAcpModelSelection,
+  makeKiroAcpRuntime,
+  resolveKiroAcpBaseModelId,
+} from "../../provider/acp/KiroAcpSupport.ts";
+import { makeKiroSubagents } from "../../provider/acp/KiroSubagents.ts";
+import { mergeProviderInstanceEnvironment } from "../../provider/ProviderInstanceEnvironment.ts";
+import * as ProviderEventLoggers from "../../provider/Layers/ProviderEventLoggers.ts";
+import * as IdAllocator from "../IdAllocator.ts";
+import * as ProviderContinuationRequests from "../ProviderContinuationRequests.ts";
+import {
+  ProviderAdapterDriverCreateError,
+  type ProviderAdapterDriver,
+  type ProviderAdapterDriverCreateInput,
+} from "../ProviderAdapterDriver.ts";
+import {
+  AcpProviderCapabilitiesV2,
+  makeAcpAdapterV2,
+  type AcpAdapterV2Flavor,
+  type AcpAdapterV2SubagentUpdate,
+  type AcpAdapterV2Options,
+} from "./AcpAdapterV2.ts";
+
+export const KIRO_PROVIDER = ProviderDriverKind.make("kiro");
+const KIRO_DRIVER_KIND = KIRO_PROVIDER;
+const DEFAULT_KIRO_SETTINGS = Schema.decodeSync(KiroSettings)({});
+const KIRO_PLANNER_MODE_ID = "kiro_planner";
+const ACP_PLAN_MODE_ALIASES = ["plan", "architect"];
+export type KiroAdapterV2Options = Omit<AcpAdapterV2Options, "flavor"> & {
+  readonly settings: KiroSettings;
+  readonly environment: NodeJS.ProcessEnv;
+  readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
+  readonly makeRuntime?: AcpAdapterV2Flavor["makeRuntime"];
+};
+export const KiroProviderCapabilitiesV2 = {
+  ...AcpProviderCapabilitiesV2,
+  sessions: { ...AcpProviderCapabilitiesV2.sessions, supportsModelSwitchInSession: true },
+  subagents: {
+    ...AcpProviderCapabilitiesV2.subagents,
+    supportsSubagents: true,
+    exposesSubagentThreadIds: true,
+    emitsSubagentLifecycle: true,
+  },
+} satisfies OrchestrationV2ProviderCapabilities;
+
+type KiroTaskEvent = Extract<
+  ProviderRuntimeEvent,
+  { type: "task.started" | "task.progress" | "task.updated" | "task.completed" }
+>;
+export function kiroTaskEventToSubagentUpdate(
+  event: KiroTaskEvent,
+  previous?: AcpAdapterV2SubagentUpdate,
+): AcpAdapterV2SubagentUpdate {
+  const payload = event.payload;
+  const status = "status" in payload ? payload.status : undefined;
+  return {
+    ...previous,
+    observationOnly:
+      event.type === "task.progress" &&
+      "observation" in payload &&
+      payload.observation !== undefined &&
+      status === undefined &&
+      payload.summary === undefined,
+    nativeTaskId: payload.taskId,
+    childSessionId: payload.taskId,
+    prompt:
+      "description" in payload
+        ? (payload.description ?? previous?.prompt ?? "")
+        : (previous?.prompt ?? ""),
+    title: payload.title ?? previous?.title ?? "Kiro subagent",
+    model: payload.model ?? null,
+    status:
+      status === "stopped"
+        ? "interrupted"
+        : status === "interrupted"
+          ? "interrupted"
+          : status === "failed"
+            ? "failed"
+            : status === "completed"
+              ? "completed"
+              : status === "idle"
+                ? "idle"
+                : status === undefined
+                  ? (previous?.status ?? "running")
+                  : "running",
+    result:
+      "summary" in payload
+        ? (payload.summary ?? previous?.result ?? null)
+        : (previous?.result ?? null),
+    ...("observation" in payload && payload.observation !== undefined
+      ? { observation: payload.observation }
+      : {}),
+    ...("summary" in payload && payload.summary !== undefined && event.type !== "task.completed"
+      ? { progress: payload.summary }
+      : {}),
+  };
+}
+
+export function resolveKiroRequestedModeId(input: {
+  readonly interactionMode: ProviderInteractionMode | undefined;
+  readonly modeState: AcpSessionModeState | undefined;
+  readonly defaultModeId: string | undefined;
+}): string | undefined {
+  if (input.modeState === undefined) return undefined;
+  if (input.interactionMode !== "plan") return input.defaultModeId;
+  const modes = input.modeState.availableModes;
+  return (
+    modes.find((mode) => mode.id === KIRO_PLANNER_MODE_ID)?.id ??
+    ACP_PLAN_MODE_ALIASES.flatMap((alias) =>
+      modes.filter(
+        (mode) =>
+          mode.id.toLowerCase() === alias ||
+          mode.name.toLowerCase() === alias ||
+          `${mode.id} ${mode.name} ${mode.description ?? ""}`.toLowerCase().includes(alias),
+      ),
+    )[0]?.id
+  );
+}
+
+export function makeKiroAdapterV2(options: KiroAdapterV2Options) {
+  const defaultModes = new WeakMap<object, string | undefined>();
+  const flavor: AcpAdapterV2Flavor = {
+    driver: KIRO_PROVIDER,
+    runtimeHarness: "Kiro",
+    capabilities: KiroProviderCapabilitiesV2,
+    resolveModelId: (selection) => resolveKiroAcpBaseModelId(selection.model),
+    applyModelSelection: ({ runtime, startResult, modelSelection }) =>
+      applyKiroAcpModelSelection({
+        runtime,
+        sessionId: startResult.sessionId,
+        model: modelSelection.model,
+        selections: modelSelection.options,
+        mapError: ({ cause }) => cause,
+      }).pipe(Effect.as(resolveKiroAcpBaseModelId(modelSelection.model))),
+    applySessionMode: ({ runtime, runtimePolicy }) =>
+      Effect.gen(function* () {
+        const modeState = yield* runtime.getModeState;
+        if (!defaultModes.has(runtime)) defaultModes.set(runtime, modeState?.currentModeId);
+        const mode = resolveKiroRequestedModeId({
+          interactionMode: runtimePolicy.interactionMode,
+          modeState,
+          defaultModeId: defaultModes.get(runtime),
+        });
+        if (mode !== undefined && mode !== modeState?.currentModeId) yield* runtime.setMode(mode);
+      }),
+    makeRuntime:
+      options.makeRuntime ??
+      (({ runtimePolicy, ...input }) =>
+        makeKiroAcpRuntime({
+          ...input,
+          kiroSettings: options.settings,
+          environment: options.environment,
+          childProcessSpawner: options.childProcessSpawner,
+          runtimeMode: runtimePolicy.runtimeMode,
+        })),
+    registerExtensions: ({ runtime, scope, currentTurn, updateSubagent }) =>
+      Effect.gen(function* () {
+        const updates = new Map<string, AcpAdapterV2SubagentUpdate>();
+        const tracker = yield* makeKiroSubagents({
+          runtime,
+          scope,
+          threadId: ThreadId.make("kiro-session"),
+          getTurn: () => undefined,
+          resolveTurn: currentTurn,
+          makeStamp: () =>
+            DateTime.now.pipe(
+              Effect.map((now) => ({
+                eventId: EventId.make(`kiro:${DateTime.toEpochMillis(now)}`),
+                createdAt: DateTime.formatIso(now),
+              })),
+            ),
+          publish: (event) => {
+            if (
+              event.type !== "task.started" &&
+              event.type !== "task.progress" &&
+              event.type !== "task.updated" &&
+              event.type !== "task.completed"
+            )
+              return Effect.void;
+            const update = kiroTaskEventToSubagentUpdate(event, updates.get(event.payload.taskId));
+            updates.set(event.payload.taskId, update);
+            return updateSubagent(update);
+          },
+        });
+        yield* Scope.addFinalizer(scope, tracker.close("interrupted"));
+      }),
+  };
+  return makeAcpAdapterV2({
+    instanceId: options.instanceId,
+    flavor,
+    crypto: options.crypto,
+    fileSystem: options.fileSystem,
+    idAllocator: options.idAllocator,
+    serverConfig: options.serverConfig,
+    selfInvocation: options.selfInvocation,
+    ...(options.nativeLogging === undefined ? {} : { nativeLogging: options.nativeLogging }),
+    ...(options.continuationRequests === undefined
+      ? {}
+      : { continuationRequests: options.continuationRequests }),
+    ...(options.testHooks === undefined ? {} : { testHooks: options.testHooks }),
+  });
+}
+
+export type KiroAdapterV2DriverEnv =
+  | ChildProcessSpawner.ChildProcessSpawner
+  | Crypto.Crypto
+  | FileSystem.FileSystem
+  | IdAllocator.IdAllocatorV2
+  | Path.Path
+  | ProviderEventLoggers.ProviderEventLoggers
+  | ServerConfig.ServerConfig;
+
+export const KiroAdapterV2Driver: ProviderAdapterDriver<KiroSettings, KiroAdapterV2DriverEnv> = {
+  driverKind: KIRO_DRIVER_KIND,
+  configSchema: KiroSettings,
+  defaultConfig: (): KiroSettings => DEFAULT_KIRO_SETTINGS,
+  create: Effect.fn("KiroAdapterV2Driver.create")(
+    function* (input: ProviderAdapterDriverCreateInput<KiroSettings>) {
+      const hostEnvironment = yield* HostProcessEnvironment;
+      const selfInvocation = yield* resolveSelfInvocation();
+      const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const crypto = yield* Crypto.Crypto;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const providerEventLoggers = yield* ProviderEventLoggers.ProviderEventLoggers;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
+      const makeNativeLogger = yield* makeAcpNativeLoggerFactory();
+      return makeKiroAdapterV2({
+        instanceId: input.instanceId,
+        settings: { ...input.config, enabled: input.enabled },
+        environment: mergeProviderInstanceEnvironment(input.environment, hostEnvironment),
+        childProcessSpawner,
+        crypto,
+        fileSystem,
+        idAllocator,
+        serverConfig,
+        selfInvocation,
+        continuationRequests,
+        nativeLogging: (threadId) =>
+          makeNativeLogger({
+            nativeEventLogger: providerEventLoggers.native,
+            provider: KIRO_PROVIDER,
+            threadId,
+          }),
+      });
+    },
+    (effect, input) =>
+      effect.pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProviderAdapterDriverCreateError({
+              driver: KIRO_DRIVER_KIND,
+              instanceId: input.instanceId,
+              detail: "Failed to create Kiro ACP adapter.",
+              cause,
+            }),
+        ),
+      ),
+  ),
+};
