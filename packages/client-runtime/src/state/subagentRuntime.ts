@@ -149,20 +149,6 @@ export function projectedSubagentsToRuntime(
   });
 }
 
-export function formatSubagentModelLabel(
-  model: string | null,
-  effort: string | null,
-): string | null {
-  if (!model) {
-    return null;
-  }
-  const compact = model
-    .replace(/^claude-/, "")
-    .replace(/-\d{8}$/, "")
-    .replace(/-latest$/, "");
-  return effort ? `${compact} · ${effort}` : compact;
-}
-
 export function formatSubagentTokenCount(totalTokens: number): string {
   if (totalTokens < 1000) {
     return `${totalTokens}`;
