@@ -16,12 +16,6 @@ directory, endpoint, or model configuration. `--provider` must be paired with `-
 rejects launch arguments that change Pi's execution mode or select a session because T3 owns those
 parts of the process lifecycle.
 
-## Existing ACP instances
-
-Instances configured with `pi-acp` continue using the ACP adapter. Keep both Pi and `pi-acp`
-installed on the server for those instances. Create a separate Pi instance with the `pi` binary
-to use native sessions and extensions. ACP instances do not attach T3 Code's injected MCP tools.
-
 ## What Carries Over
 
 T3 Code discovers the models reported by Pi and exposes their supported thinking levels. The

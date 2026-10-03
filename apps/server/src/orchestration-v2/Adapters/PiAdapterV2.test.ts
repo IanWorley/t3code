@@ -316,7 +316,7 @@ const makeAdapter = Effect.fnUntraced(function* (fake: FakePi, launchArgs = "", 
   const fileSystem = yield* FileSystem.FileSystem;
   return makePiAdapterV2({
     instanceId: PI_INSTANCE_ID,
-    settings: { transport: "rpc", enabled: true, binaryPath: "pi", launchArgs, customModels: [] },
+    settings: { enabled: true, binaryPath: "pi", launchArgs, customModels: [] },
     environment: {},
     spawner:
       forkFake === undefined

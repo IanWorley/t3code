@@ -48,7 +48,6 @@ const settings = {
   enabled: true,
   binaryPath: "pi",
   launchArgs: "",
-  transport: "rpc",
   customModels: [],
 } as const;
 

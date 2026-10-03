@@ -119,9 +119,8 @@ computer.
 | Grok Build  | Install [Grok Build CLI](https://x.ai/cli), then run `grok login`.                                                                                        |
 | OpenCode    | Install [OpenCode](https://opencode.ai), then run `opencode auth login`.                                                                                  |
 | Kiro        | Install [Kiro CLI](https://kiro.dev/docs/getting-started/installation/), then run `kiro-cli login`.                                                       |
-| Pi          | Install Pi and its ACP adapter; see [Pi setup](./providers-pi.md).                                                                                        |
-| Antigravity | Install and sign in with Google from T3 Code's provider settings.                                                                                         |
 | Pi          | Install [Pi](https://pi.dev), then run `pi` once to finish its login or API-key setup.                                                                    |
+| Antigravity | Install and sign in with Google from T3 Code's provider settings.                                                                                         |
 
 Provider CLIs must be on the server's `PATH`. If T3 Code cannot find one, set its
 **Binary path** in provider settings, especially when using a version manager.

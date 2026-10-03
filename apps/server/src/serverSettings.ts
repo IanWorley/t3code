@@ -24,7 +24,6 @@ import {
   type UsageLimitSourceConfig,
   type ProviderInstanceMutation,
   ProviderDriverKind,
-  PiTransport,
   ProviderInstanceId,
   resolveProviderInstanceEnabled,
   ResponseStreamingMode,
@@ -106,7 +105,7 @@ const foldProviderInstanceEnabledFlags = (settings: ServerSettings): ServerSetti
         ? false
         : (instance.enabled ?? configEnabled);
     changed = true;
-    providerInstances[instanceId] = {
+    providerInstances[ProviderInstanceId.make(instanceId)] = {
       ...instance,
       enabled: resolved,
       config: restConfig,
@@ -398,7 +397,7 @@ const PersistedOptionalProviderSettings = Schema.Struct({
         Schema.Struct({
           enabled: Schema.optionalKey(Schema.Boolean),
           binaryPath: Schema.optionalKey(Schema.String),
-          transport: Schema.optionalKey(PiTransport),
+          transport: Schema.optionalKey(Schema.Literals(["rpc", "acp"])),
         }),
       ),
       opencode: Schema.optionalKey(Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) })),
@@ -409,11 +408,58 @@ const decodePersistedOptionalProviderSettingsJsonExit = Schema.decodeUnknownExit
   fromLenientJson(PersistedOptionalProviderSettings),
 );
 
+const NATIVE_PI_BINARY = "pi";
 const LEGACY_PI_ACP_BINARY = "pi-acp";
-const LEGACY_PI_TRANSPORT = "acp";
 const decodeLegacyPiConfig = Schema.decodeUnknownOption(
   Schema.Record(Schema.String, Schema.Unknown),
 );
+
+function removeLegacyPiSettings(
+  settings: ServerSettings,
+  persisted: typeof PersistedOptionalProviderSettings.Type,
+): { readonly settings: ServerSettings; readonly changed: boolean } {
+  const persistedPi = persisted.providers?.pi;
+  const resetGlobalBinary =
+    persistedPi?.transport === "acp" || persistedPi?.binaryPath === LEGACY_PI_ACP_BINARY;
+  let changed = persistedPi?.transport !== undefined || resetGlobalBinary;
+  const providerInstances = { ...settings.providerInstances };
+
+  for (const [instanceId, instance] of Object.entries(settings.providerInstances)) {
+    if (instance.driver !== "pi") continue;
+    const decodedConfig = decodeLegacyPiConfig(instance.config ?? {});
+    if (Option.isNone(decodedConfig)) continue;
+    const transport = decodedConfig.value.transport;
+    const usesLegacyTransport = transport === "rpc" || transport === "acp";
+    const usesLegacyBinary = decodedConfig.value.binaryPath === LEGACY_PI_ACP_BINARY;
+    if (!usesLegacyTransport && !usesLegacyBinary) continue;
+
+    const { transport: _transport, ...config } = decodedConfig.value;
+    const providerInstanceId = ProviderInstanceId.make(instanceId);
+    providerInstances[providerInstanceId] = {
+      ...instance,
+      config:
+        transport === "acp" || usesLegacyBinary
+          ? { ...config, binaryPath: NATIVE_PI_BINARY }
+          : config,
+    };
+    changed = true;
+  }
+
+  if (!changed) return { settings, changed: false };
+  return {
+    settings: {
+      ...settings,
+      providers: {
+        ...settings.providers,
+        pi: resetGlobalBinary
+          ? { ...settings.providers.pi, binaryPath: NATIVE_PI_BINARY }
+          : settings.providers.pi,
+      },
+      providerInstances,
+    },
+    changed: true,
+  };
+}
 
 function restoreUsedProviders(
   settings: ServerSettings,
@@ -442,24 +488,7 @@ function restoreUsedProviders(
         used
           ? true
           : instance.enabled;
-      const restored = { ...instance, ...(enabled === undefined ? {} : { enabled }) };
-      if (instance.driver !== "pi") return [instanceId, restored];
-      const config = decodeLegacyPiConfig(instance.config ?? {});
-      return [
-        instanceId,
-        Option.isSome(config) && config.value.transport === undefined
-          ? {
-              ...restored,
-              config: {
-                ...config.value,
-                transport: LEGACY_PI_TRANSPORT,
-                ...(config.value.binaryPath === undefined
-                  ? { binaryPath: LEGACY_PI_ACP_BINARY }
-                  : {}),
-              },
-            }
-          : restored,
-      ];
+      return [instanceId, { ...instance, ...(enabled === undefined ? {} : { enabled }) }];
     }),
   );
 
@@ -481,15 +510,6 @@ function restoreUsedProviders(
       },
       pi: {
         ...settings.providers.pi,
-        ...((usedProviderInstances.has("pi") || persisted.providers?.pi !== undefined) &&
-        persisted.providers?.pi?.transport === undefined
-          ? {
-              transport: LEGACY_PI_TRANSPORT,
-              ...(persisted.providers?.pi?.binaryPath === undefined
-                ? { binaryPath: LEGACY_PI_ACP_BINARY }
-                : {}),
-            }
-          : {}),
         enabled: persisted.providers?.pi?.enabled ?? usedProviders.has("pi"),
       },
       opencode: {
@@ -782,6 +802,7 @@ const make = Effect.gen(function* () {
   const loadSettingsFromDisk = Effect.gen(function* () {
     let settings = DEFAULT_SERVER_SETTINGS;
     let persisted: typeof PersistedOptionalProviderSettings.Type = {};
+    let removedLegacyPiSettings = false;
     // A file that failed to decode must stay on disk for the user to repair;
     // the fold below only writes when it started from the file's real contents.
     let settingsFileTrusted = true;
@@ -805,6 +826,9 @@ const make = Effect.gen(function* () {
         }
       } else {
         settings = decoded.value;
+        const piMigration = removeLegacyPiSettings(settings, persisted);
+        settings = piMigration.settings;
+        removedLegacyPiSettings = piMigration.changed;
       }
     }
 
@@ -865,7 +889,7 @@ const make = Effect.gen(function* () {
       : loaded;
     // Only rewrite a file that decoded cleanly; an untrusted one stays for the user to repair.
     const migrated = settingsFileTrusted ? yield* moveInlineBitbucketTokens(folded) : folded;
-    if (migrated !== loaded) {
+    if (migrated !== loaded || removedLegacyPiSettings) {
       yield* writeSettingsAtomically(migrated);
     }
     return migrated;

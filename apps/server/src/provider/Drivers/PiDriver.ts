@@ -7,7 +7,6 @@
  * `~/.pi/agent`, so continuation identity uses the default instance grouping.
  */
 import { PiSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -18,15 +17,6 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import * as ServerConfig from "../../config.ts";
 import * as ServerSettings from "../../serverSettings.ts";
-import { makePiAcpTextGeneration } from "../../textGeneration/PiAcpTextGeneration.ts";
-import {
-  PiAcpAdapterV2Driver,
-  type PiAcpAdapterV2DriverEnv,
-} from "../../orchestration-v2/Adapters/PiAcpAdapterV2.ts";
-import {
-  buildInitialPiAcpProviderSnapshot,
-  checkPiAcpProviderStatus,
-} from "../Layers/PiAcpProvider.ts";
 import { makePiTextGeneration } from "../../textGeneration/PiTextGeneration.ts";
 import {
   PiAdapterV2Driver,
@@ -60,15 +50,6 @@ import {
 const decodePiSettings = Schema.decodeSync(PiSettings);
 
 const DRIVER_KIND = ProviderDriverKind.make("pi");
-const LEGACY_ACP_BINARY = /(?:^|[/\\])pi-acp(?:\.(?:cmd|exe))?$/i;
-
-export const usesPiAcpTransport = (config: Pick<PiSettings, "binaryPath" | "transport">) =>
-  config.transport === "acp" || LEGACY_ACP_BINARY.test(config.binaryPath.trim());
-const LEGACY_UPDATE = makePackageManagedProviderMaintenanceResolver({
-  provider: DRIVER_KIND,
-  npmPackageName: "pi-acp",
-  nativeUpdate: null,
-});
 const UPDATE = makePackageManagedProviderMaintenanceResolver({
   provider: DRIVER_KIND,
   npmPackageName: "@earendil-works/pi-coding-agent",
@@ -77,7 +58,6 @@ const UPDATE = makePackageManagedProviderMaintenanceResolver({
 
 export type PiDriverEnv =
   | PiAdapterV2DriverEnv
-  | PiAcpAdapterV2DriverEnv
   | BackgroundPolicy.BackgroundPolicy
   | ChildProcessSpawner.ChildProcessSpawner
   | FileSystem.FileSystem
@@ -112,8 +92,6 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
   defaultConfig: (): PiSettings => decodePiSettings({}),
   create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
     Effect.gen(function* () {
-      const crypto = yield* Crypto.Crypto;
-      const legacyAcp = usesPiAcpTransport(config);
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const fileSystem = yield* FileSystem.FileSystem;
       const pathService = yield* Path.Path;
@@ -133,7 +111,7 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
       });
       const effectiveConfig = { ...config, enabled } satisfies PiSettings;
       const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
-        resolveProviderMaintenanceCapabilitiesEffect(legacyAcp ? LEGACY_UPDATE : UPDATE, {
+        resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
           binaryPath: effectiveConfig.binaryPath,
           env: processEnv,
         }).pipe(
@@ -143,37 +121,27 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
         ),
       );
 
-      const orchestrationAdapter = yield* (legacyAcp ? PiAcpAdapterV2Driver : PiAdapterV2Driver)
-        .create({
-          instanceId,
-          displayName,
-          accentColor,
-          environment,
-          enabled,
-          config,
-        })
-        .pipe(
-          Effect.mapError(
-            (cause) =>
-              new ProviderDriverError({
-                driver: DRIVER_KIND,
-                instanceId,
-                detail: "Failed to build Pi orchestration adapter.",
-                cause,
-              }),
-          ),
-        );
-      const textGeneration = yield* (legacyAcp ? makePiAcpTextGeneration : makePiTextGeneration)(
-        effectiveConfig,
-        processEnv,
+      const orchestrationAdapter = yield* PiAdapterV2Driver.create({
+        instanceId,
+        displayName,
+        accentColor,
+        environment,
+        enabled,
+        config,
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProviderDriverError({
+              driver: DRIVER_KIND,
+              instanceId,
+              detail: "Failed to build Pi orchestration adapter.",
+              cause,
+            }),
+        ),
       );
+      const textGeneration = yield* makePiTextGeneration(effectiveConfig, processEnv);
 
-      const checkProvider = (legacyAcp ? checkPiAcpProviderStatus : checkPiProviderStatus)(
-        effectiveConfig,
-        processEnv,
-        cwd,
-      ).pipe(
-        Effect.provideService(Crypto.Crypto, crypto),
+      const checkProvider = checkPiProviderStatus(effectiveConfig, processEnv, cwd).pipe(
         Effect.map(stampIdentity),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       );
@@ -185,9 +153,7 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
         streamSettings: snapshotSettings.streamSettings,
         haveSettingsChanged: haveProviderSnapshotSettingsChanged,
         initialSnapshot: (settings) =>
-          (legacyAcp ? buildInitialPiAcpProviderSnapshot : buildInitialPiProviderSnapshot)(
-            settings.provider,
-          ).pipe(Effect.map(stampIdentity)),
+          buildInitialPiProviderSnapshot(settings.provider).pipe(Effect.map(stampIdentity)),
         checkProvider,
         enrichSnapshot: ({ settings, snapshot: currentSnapshot, publishSnapshot }) =>
           resolveMaintenance().pipe(

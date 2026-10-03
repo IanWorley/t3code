@@ -149,9 +149,8 @@ const makeOpenCodeConfig = (overrides: Partial<OpenCodeSettings>): OpenCodeSetti
 
 const makePiConfig = (overrides: Partial<PiSettings>): PiSettings => ({
   launchArgs: "",
-  transport: "acp",
   enabled: false,
-  binaryPath: "pi-acp",
+  binaryPath: "pi",
   customModels: [],
   ...overrides,
 });

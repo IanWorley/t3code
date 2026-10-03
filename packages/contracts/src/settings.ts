@@ -833,26 +833,8 @@ export const AntigravitySettings = makeProviderSettingsSchema(
 );
 export type AntigravitySettings = typeof AntigravitySettings.Type;
 
-export const PiTransport = Schema.Literals(["rpc", "acp"]);
-export type PiTransport = typeof PiTransport.Type;
-
 export const PiSettings = makeProviderSettingsSchema(
   {
-    transport: PiTransport.pipe(
-      Schema.withDecodingDefault(Effect.succeed("rpc")),
-      Schema.annotateKey({
-        title: "Transport",
-        description: "Native Pi RPC or a separately installed Pi ACP adapter.",
-        providerSettingsForm: {
-          control: "select",
-          options: [
-            { value: "rpc", label: "Native RPC" },
-            { value: "acp", label: "ACP adapter" },
-          ],
-          clearWhenEmpty: "omit",
-        },
-      }),
-    ),
     // Off by default like Cursor and Grok. Users opt in from Settings.
     enabled: Schema.Boolean.pipe(
       Schema.withDecodingDefault(Effect.succeed(false)),
@@ -879,7 +861,7 @@ export const PiSettings = makeProviderSettingsSchema(
     ),
   },
   {
-    order: ["transport", "binaryPath", "launchArgs"],
+    order: ["binaryPath", "launchArgs"],
   },
 );
 export type PiSettings = typeof PiSettings.Type;
@@ -1618,7 +1600,6 @@ const KiroSettingsPatch = Schema.Struct({
 });
 
 const PiSettingsPatch = Schema.Struct({
-  transport: Schema.optionalKey(PiTransport),
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(TrimmedString),
   launchArgs: Schema.optionalKey(TrimmedString),

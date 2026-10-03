@@ -1172,14 +1172,3 @@ describe("branch naming settings", () => {
     },
   );
 });
-
-describe("Pi transport settings", () => {
-  it("defaults new configurations to native RPC", () => {
-    expect(decodeServerSettings({}).providers.pi.transport).toBe("rpc");
-  });
-  it("retains explicit ACP transport for custom adapter paths", () => {
-    const pi = { transport: "acp", binaryPath: "/custom/pi-wrapper" };
-    expect(decodeServerSettings({ providers: { pi } }).providers.pi).toMatchObject(pi);
-    expect(decodeServerSettingsPatch({ providers: { pi } }).providers?.pi).toEqual(pi);
-  });
-});

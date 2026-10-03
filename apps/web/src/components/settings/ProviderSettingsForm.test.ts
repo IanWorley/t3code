@@ -86,29 +86,6 @@ describe("ProviderSettingsForm helpers", () => {
     expect(fields.find((field) => field.key === "apiKey")?.control).toBe("password");
   });
 
-  it("offers both Pi transports and preserves the configured adapter path when switching", () => {
-    const pi = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("pi")];
-    expect(pi).toBeDefined();
-    const transport = deriveProviderSettingsFields(pi!).find((field) => field.key === "transport");
-    expect(transport).toMatchObject({
-      control: "select",
-      options: [
-        { value: "rpc", label: "Native RPC" },
-        { value: "acp", label: "ACP adapter" },
-      ],
-    });
-    expect(
-      nextProviderConfigWithFieldValue(
-        { binaryPath: "/usr/local/bin/pi-acp", transport: "rpc" },
-        transport!,
-        "acp",
-      ),
-    ).toEqual({
-      binaryPath: "/usr/local/bin/pi-acp",
-      transport: "acp",
-    });
-  });
-
   it("shows the auto-compaction threshold for Claude providers", () => {
     const claude = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("claudeAgent")];
     expect(claude).toBeDefined();

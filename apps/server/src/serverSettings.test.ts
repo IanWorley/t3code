@@ -782,34 +782,55 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
-  it.effect("retains legacy Pi ACP transport without replacing explicit native transport", () =>
+  it.effect("removes saved Pi ACP settings during load", () =>
     Effect.gen(function* () {
-      const config = yield* ServerConfig.ServerConfig;
-      const fs = yield* FileSystem.FileSystem;
-      const service = yield* ServerSettingsModule.ServerSettingsService;
-      yield* fs.writeFileString(
-        config.settingsPath,
-        '{"providerInstances":{"pi_work":{"driver":"pi","config":{"customModels":["legacy/model"]}},"pi_native":{"driver":"pi","config":{"binaryPath":"/opt/pi","transport":"rpc"}},"pi_wrapper":{"driver":"pi","config":{"binaryPath":"/opt/team/pi-wrapper"}}}}',
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        `{
+          "providers": {
+            "pi": { "enabled": true, "binaryPath": "pi-acp", "transport": "acp" }
+          },
+          "providerInstances": {
+            "pi_acp": {
+              "driver": "pi",
+              "config": {
+                "binaryPath": "/opt/team/pi-wrapper",
+                "transport": "acp",
+                "customModels": ["legacy/model"]
+              }
+            },
+            "pi_rpc": {
+              "driver": "pi",
+              "config": { "binaryPath": "/opt/pi", "transport": "rpc" }
+            },
+            "pi_native": {
+              "driver": "pi",
+              "config": { "binaryPath": "/opt/native-pi" }
+            }
+          }
+        }`,
       );
-      yield* recordProviderUsage("pi", null);
-      yield* recordProviderUsage("pi", "pi_work");
-      yield* recordProviderUsage("pi", "pi_native");
-      const settings = yield* service.getSettings;
-      assert.equal(settings.providers.pi.binaryPath, "pi-acp");
-      assert.equal(settings.providers.pi.transport, "acp");
-      assert.deepEqual(settings.providerInstances[ProviderInstanceId.make("pi_work")]?.config, {
+
+      const settings = yield* serverSettings.getSettings;
+
+      assert.equal(settings.providers.pi.binaryPath, "pi");
+      assert.deepEqual(settings.providerInstances[ProviderInstanceId.make("pi_acp")]?.config, {
+        binaryPath: "pi",
         customModels: ["legacy/model"],
-        binaryPath: "pi-acp",
-        transport: "acp",
+      });
+      assert.deepEqual(settings.providerInstances[ProviderInstanceId.make("pi_rpc")]?.config, {
+        binaryPath: "/opt/pi",
       });
       assert.deepEqual(settings.providerInstances[ProviderInstanceId.make("pi_native")]?.config, {
-        binaryPath: "/opt/pi",
-        transport: "rpc",
+        binaryPath: "/opt/native-pi",
       });
-      assert.deepEqual(settings.providerInstances[ProviderInstanceId.make("pi_wrapper")]?.config, {
-        binaryPath: "/opt/team/pi-wrapper",
-        transport: "acp",
-      });
+      const saved = yield* fileSystem.readFileString(serverConfig.settingsPath);
+      assert.notInclude(saved, '"transport"');
+      assert.notInclude(saved, "pi-acp");
+      assert.notInclude(saved, "/opt/team/pi-wrapper");
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 

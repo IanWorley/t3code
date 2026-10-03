@@ -165,9 +165,3 @@ existing metadata. Each instance can disable that projection independently with
 the status snapshot for availability advisories. The snapshot also records the exact IDs added by
 the projection so clients badge only proxy-added models, not native harness models whose traffic
 happens to use the proxy route.
-
-## Pi ACP modes
-
-Cursor and Pi share the protocol-neutral ACP adapter core in `CursorAdapter.ts`. Pi ACP modes
-represent reasoning levels rather than plan/code modes; its wrapper maps `thought_level` to the
-reasoning option and hides the interaction-mode toggle.
