@@ -819,6 +819,41 @@ describe("GitHubCli.layer", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("searches repositories within an owner when the query names one", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(
+        Effect.succeed(
+          processOutput(
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify([
+              {
+                fullName: "octocat/codething-fork",
+                description: "",
+                url: "https://github.com/octocat/codething-fork",
+                visibility: "private",
+              },
+            ]),
+          ),
+        ),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const result = yield* gh.searchRepositories({ cwd: "/repo", query: " octocat/code " });
+
+      const args = mockRun.mock.calls[0]?.[0].args ?? [];
+      assert.deepStrictEqual(args.slice(args.indexOf("--")), ["--", "user:octocat", "code"]);
+      assert.include(args.join(" "), "--include-forks true");
+      assert.deepStrictEqual(result, [
+        {
+          nameWithOwner: "octocat/codething-fork",
+          description: null,
+          url: "https://github.com/octocat/codething-fork",
+          visibility: "private",
+        },
+      ]);
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("creates repositories and parses clone URLs from create output", () =>
     Effect.gen(function* () {
       mockRun.mockReturnValueOnce(
