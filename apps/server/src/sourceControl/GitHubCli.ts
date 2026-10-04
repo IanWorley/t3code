@@ -409,7 +409,7 @@ const decodeRawGitHubRepositorySearchResults = Schema.decodeEffect(
  * does not understand `owner/repo`, so a slash becomes a `user:` qualifier,
  * which matches both users and organizations.
  */
-export function githubRepositorySearchTerms(query: string): ReadonlyArray<string> {
+function githubRepositorySearchTerms(query: string): ReadonlyArray<string> {
   const terms = query
     .trim()
     .split(/\s+/u)
