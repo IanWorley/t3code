@@ -7,6 +7,7 @@ import type {
   SourceControlProviderInfo,
   SourceControlProviderKind,
   SourceControlRepositoryCloneUrls,
+  SourceControlRepositorySearchMatch,
   SourceControlRepositoryVisibility,
 } from "@t3tools/contracts";
 
@@ -126,6 +127,14 @@ export class SourceControlProvider extends Context.Service<
       readonly context?: SourceControlProviderContext;
       readonly repository: string;
     }) => Effect.Effect<SourceControlRepositoryCloneUrls, SourceControlProviderError>;
+    /** Optional capability for finding a repository to clone by keyword. */
+    readonly searchRepositories?: (input: {
+      readonly cwd: string;
+      readonly query: string;
+    }) => Effect.Effect<
+      ReadonlyArray<SourceControlRepositorySearchMatch>,
+      SourceControlProviderError
+    >;
     readonly createRepository: (input: {
       readonly cwd: string;
       readonly repository: string;

@@ -284,6 +284,13 @@ export interface GitHubRepositoryCloneUrls {
   readonly sshUrl: string;
 }
 
+export interface GitHubRepositorySearchMatch {
+  readonly nameWithOwner: string;
+  readonly description: string | null;
+  readonly url: string;
+  readonly visibility: SourceControlRepositoryVisibility;
+}
+
 export class GitHubCli extends Context.Service<
   GitHubCli,
   {
@@ -332,6 +339,11 @@ export class GitHubCli extends Context.Service<
       readonly repository: string;
     }) => Effect.Effect<GitHubRepositoryCloneUrls, GitHubCliError>;
 
+    readonly searchRepositories: (input: {
+      readonly cwd: string;
+      readonly query: string;
+    }) => Effect.Effect<ReadonlyArray<GitHubRepositorySearchMatch>, GitHubCliError>;
+
     readonly createRepository: (input: {
       readonly cwd: string;
       readonly repository: string;
@@ -376,6 +388,39 @@ function normalizeRepositoryCloneUrls(
     url: raw.url,
     sshUrl: raw.sshUrl,
   };
+}
+
+const REPOSITORY_SEARCH_LIMIT = 20;
+
+const RawGitHubRepositorySearchResultsSchema = Schema.Array(
+  Schema.Struct({
+    fullName: TrimmedNonEmptyString,
+    description: Schema.NullishOr(Schema.String),
+    url: TrimmedNonEmptyString,
+    visibility: Schema.String,
+  }),
+);
+const decodeRawGitHubRepositorySearchResults = Schema.decodeEffect(
+  Schema.fromJsonString(RawGitHubRepositorySearchResultsSchema),
+);
+
+/**
+ * Splits a search box query into `gh search repos` keywords. GitHub search
+ * does not understand `owner/repo`, so a slash becomes a `user:` qualifier,
+ * which matches both users and organizations.
+ */
+export function githubRepositorySearchTerms(query: string): ReadonlyArray<string> {
+  const terms = query
+    .trim()
+    .split(/\s+/u)
+    .filter((term) => term.length > 0);
+  return terms.flatMap((term) => {
+    const slash = term.indexOf("/");
+    if (slash <= 0 || term.includes(":")) return [term];
+    const owner = term.slice(0, slash);
+    const name = term.slice(slash + 1);
+    return name.length > 0 ? [`user:${owner}`, name] : [`user:${owner}`];
+  });
 }
 
 /**
@@ -1035,6 +1080,45 @@ export const make = Effect.gen(function* () {
           ),
         ),
         Effect.map(normalizeRepositoryCloneUrls),
+      ),
+    searchRepositories: (input) =>
+      execute({
+        cwd: input.cwd,
+        args: [
+          "search",
+          "repos",
+          // Forks are hidden by default, which hides the user's own forks.
+          "--include-forks",
+          "true",
+          "--limit",
+          String(REPOSITORY_SEARCH_LIMIT),
+          "--json",
+          "fullName,description,url,visibility",
+          // Everything after `--` is a keyword, so a leading `-` cannot become a flag.
+          "--",
+          ...githubRepositorySearchTerms(input.query),
+        ],
+      }).pipe(
+        Effect.flatMap((result) =>
+          decodeRawGitHubRepositorySearchResults(result.stdout.trim()).pipe(
+            Effect.mapError(
+              (cause) =>
+                new GitHubRepositoryDecodeError({
+                  command: "gh",
+                  cwd: input.cwd,
+                  cause,
+                }),
+            ),
+          ),
+        ),
+        Effect.map((repositories) =>
+          repositories.map((repository): GitHubRepositorySearchMatch => ({
+            nameWithOwner: repository.fullName,
+            description: repository.description?.trim() || null,
+            url: repository.url,
+            visibility: repository.visibility === "public" ? "public" : "private",
+          })),
+        ),
       ),
     createRepository: (input) =>
       execute({

@@ -6,6 +6,7 @@ import {
   addProjectRemoteSourceLabel,
   addProjectRemoteSourcePathHint,
   addProjectRemoteSourceProvider,
+  addProjectRemoteSourceSearchable,
   buildAddProjectRemoteSourceReadiness,
   buildProjectCreateCommand,
   canCreateProjectInEnvironment,
@@ -19,6 +20,8 @@ import {
   getNewProjectGitHubTarget,
   getNewProjectPathPreview,
   normalizePastedCloneUrl,
+  REPOSITORY_SEARCH_DEBOUNCE_MS,
+  REPOSITORY_SEARCH_MIN_QUERY_LENGTH,
   resolveAddProjectPath,
   sortAddProjectProviderSources,
   type AddProjectRemoteSource,
@@ -58,6 +61,7 @@ import { cn } from "../../lib/cn";
 import { useProjects, useServerConfigs, waitForProject } from "../../state/entities";
 import { filesystemEnvironment } from "../../state/filesystem";
 import { projectEnvironment } from "../../state/projects";
+import { useDebouncedValue } from "../../state/queries";
 import { useEnvironmentQuery } from "../../state/query";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
@@ -753,8 +757,35 @@ export function AddProjectRepositoryScreen(props: {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const lookupRepository = useCallback(async () => {
-    if (!environment || repositoryInput.trim().length === 0 || isSubmitting) return;
+  const searchProvider = addProjectRemoteSourceSearchable(source) ? source : null;
+  const searchText = useDebouncedValue(
+    searchProvider === null ? "" : repositoryInput.trim(),
+    REPOSITORY_SEARCH_DEBOUNCE_MS,
+  );
+  const repositorySearch = useEnvironmentQuery(
+    !environment ||
+      searchProvider === null ||
+      searchText.length < REPOSITORY_SEARCH_MIN_QUERY_LENGTH
+      ? null
+      : sourceControlEnvironment.repositorySearch({
+          environmentId: environment.environmentId,
+          input: { provider: searchProvider, query: searchText },
+        }),
+  );
+  const searchMatches = searchProvider === null ? [] : (repositorySearch.data?.repositories ?? []);
+  const searchIcon =
+    searchProvider === null ? null : (
+      <SourceControlIcon
+        kind={searchProvider}
+        size={Platform.OS === "android" ? 24 : 18}
+        colorClassName="accent-icon"
+      />
+    );
+
+  /** `repositoryOverride` is a picked search result; otherwise the typed text is looked up. */
+  async function lookupRepository(repositoryOverride?: string) {
+    const repositoryName = (repositoryOverride ?? repositoryInput).trim();
+    if (!environment || repositoryName.length === 0 || isSubmitting) return;
     setError(null);
     setIsSubmitting(true);
     const provider = addProjectRemoteSourceProvider(source);
@@ -777,7 +808,7 @@ export function AddProjectRepositoryScreen(props: {
       environmentId: environment.environmentId,
       input: {
         provider,
-        repository: repositoryInput.trim(),
+        repository: repositoryName,
       },
     });
     if (AsyncResult.isFailure(result)) {
@@ -795,7 +826,7 @@ export function AddProjectRepositoryScreen(props: {
       );
     }
     setIsSubmitting(false);
-  }, [environment, isSubmitting, lookupRepositoryQuery, repositoryInput, navigation, source]);
+  }
 
   return (
     <AddProjectShell title={source === "url" ? "Git URL" : addProjectRemoteSourceLabel(source)}>
@@ -822,6 +853,28 @@ export function AddProjectRepositoryScreen(props: {
             onPress={() => void lookupRepository()}
             loading={isSubmitting}
           />
+          {searchMatches.length > 0 ? (
+            <>
+              <SectionTitle>Repositories</SectionTitle>
+              <ListSection>
+                {searchMatches.map((repository, index) => (
+                  <ListRow
+                    key={repository.nameWithOwner}
+                    title={repository.nameWithOwner}
+                    subtitle={
+                      repository.visibility === "private"
+                        ? ["Private", repository.description].filter(Boolean).join(" · ")
+                        : repository.description
+                    }
+                    icon={searchIcon}
+                    isFirst={index === 0}
+                    disabled={isSubmitting}
+                    onPress={() => void lookupRepository(repository.nameWithOwner)}
+                  />
+                ))}
+              </ListSection>
+            </>
+          ) : null}
         </>
       ) : (
         <EmptyEnvironmentState />

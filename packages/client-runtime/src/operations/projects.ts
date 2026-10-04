@@ -126,6 +126,17 @@ export function addProjectRemoteSourceProvider(
   return source === "url" ? null : source;
 }
 
+/** Wait for typing to pause before searching; provider search APIs are tightly rate limited. */
+export const REPOSITORY_SEARCH_DEBOUNCE_MS = 300;
+export const REPOSITORY_SEARCH_MIN_QUERY_LENGTH = 2;
+
+/** Sources whose provider can search repositories by keyword. */
+export function addProjectRemoteSourceSearchable(
+  source: AddProjectRemoteSource,
+): source is "github" {
+  return source === "github";
+}
+
 const GITHUB_REPOSITORY_SHORTHAND =
   /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]+(?:\.git)?$/;
 
