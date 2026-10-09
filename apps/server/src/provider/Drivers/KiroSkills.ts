@@ -29,9 +29,10 @@ function parseSkillFrontmatter(contents: string) {
 
 const ifPresent = <A, R>(effect: Effect.Effect<A, PlatformError.PlatformError, R>) =>
   effect.pipe(
-    Effect.catchTag("PlatformError", (error) =>
-      error.reason._tag === "NotFound" ? Effect.undefined : Effect.fail(error),
-    ),
+    Effect.catchTags({
+      PlatformError: (error) =>
+        error.reason._tag === "NotFound" ? Effect.undefined : Effect.fail(error),
+    }),
   );
 
 /** Mirrors the default Kiro agent's roots; workspace skills override user skills. */

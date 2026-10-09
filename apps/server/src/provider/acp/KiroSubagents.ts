@@ -19,8 +19,8 @@ import type * as Scope from "effect/Scope";
 import type * as AcpSchema from "effect-acp/compat";
 import * as AcpErrors from "effect-acp/errors";
 
-import type { AcpSessionRuntime } from "./AcpSessionRuntime.ts";
-import { sessionUpdateIsReplay } from "./AcpRuntimeModel.ts";
+import type { AcpSessionRuntime } from "@t3tools/provider-acp/server/AcpSessionRuntime";
+import { sessionUpdateIsReplay } from "@t3tools/provider-acp/server/runtimeModel";
 
 const PROVIDER = ProviderDriverKind.make("kiro");
 const LIST_UPDATE_METHOD = "_kiro.dev/subagent/list_update";

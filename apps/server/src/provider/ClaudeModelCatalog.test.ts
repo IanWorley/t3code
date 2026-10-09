@@ -1,8 +1,8 @@
 import { assert, describe, it } from "@effect/vitest";
-import { ProviderInstanceId } from "@t3tools/contracts";
+import { ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
 
 import { hasValidClaudeManifestAdapters } from "./ClaudeModelManifest.ts";
-import type { ModelManifestData } from "./ModelManifest.ts";
+import { resolveProviderCatalog, type ModelManifestData } from "./ModelManifest.ts";
 import {
   formatClaudeVersionUpgradeMessage,
   getClaudeCatalogModelCapabilities,
@@ -13,6 +13,7 @@ import {
   resolveClaudeModelCatalog,
   resolveClaudeModelsForVersion,
   resolveClaudeModelSlug,
+  resolveClaudeUpdateRequiredModels,
   scopeClaudeModelCatalog,
 } from "./ClaudeModelCatalog.ts";
 
@@ -71,11 +72,17 @@ const manifest = (): ModelManifestData => ({
   },
 });
 
+const CLAUDE = ProviderDriverKind.make("claudeAgent");
+
+/** Resolves Claude's catalog the way the driver does: through its manifest catalog entry. */
+const catalogFromManifest = (data: ModelManifestData) =>
+  resolveClaudeModelCatalog(resolveProviderCatalog(data, CLAUDE) ?? undefined);
+
 describe("Claude model catalog", () => {
   it("resolves capacity from selected options and fixed catalog windows without guessing custom models", () => {
     const source = manifest();
     const profile = source.providers!.claudeAgent!.profiles.synthetic!;
-    const catalog = resolveClaudeModelCatalog({
+    const catalog = catalogFromManifest({
       ...source,
       providers: {
         claudeAgent: {
@@ -121,12 +128,16 @@ describe("Claude model catalog", () => {
   });
 
   it("filters models at runtime-version boundaries and derives the upgrade message", () => {
-    const catalog = resolveClaudeModelCatalog(manifest());
+    const catalog = catalogFromManifest(manifest());
     assert.deepStrictEqual(resolveClaudeModelsForVersion(catalog, "3.1.9"), []);
     assert.deepStrictEqual(
       resolveClaudeModelsForVersion(catalog, "3.2.0").map((model) => model.slug),
       ["claude-synthetic-next"],
     );
+    assert.deepStrictEqual(resolveClaudeUpdateRequiredModels(catalog, "3.1.9"), [
+      { slug: "claude-synthetic-next", name: "Claude Synthetic Next", minVersion: "3.2.0" },
+    ]);
+    assert.deepStrictEqual(resolveClaudeUpdateRequiredModels(catalog, "3.2.0"), []);
     assert.strictEqual(
       formatClaudeVersionUpgradeMessage(catalog, "3.1.9"),
       "Claude Code v3.1.9 is too old for Claude Synthetic Next. Upgrade to v3.2.0 or newer to access it.",
@@ -153,7 +164,7 @@ describe("Claude model catalog", () => {
         },
       },
     };
-    const catalog = resolveClaudeModelCatalog(input);
+    const catalog = catalogFromManifest(input);
     assert.strictEqual(resolveClaudeModelSlug(catalog, "synthetic"), "claude-synthetic-next");
     assert.strictEqual(
       resolveClaudeModelSlug(catalog, "claude-synthetic-next"),
@@ -192,7 +203,7 @@ describe("Claude model catalog", () => {
 
   it("preserves proxy reasoning options when custom models scope the catalog", () => {
     const catalog = scopeClaudeModelCatalog(
-      { ...resolveClaudeModelCatalog(manifest()), vibeProxy: true },
+      { ...catalogFromManifest(manifest()), vibeProxy: true },
       ["proxy-custom"],
     );
     const capabilities = getClaudeCatalogModelCapabilities(catalog, "proxy-custom");
@@ -200,7 +211,7 @@ describe("Claude model catalog", () => {
   });
 
   it("appends custom models with their own descriptors and keeps bare slugs opaque", () => {
-    const catalog = scopeClaudeModelCatalog(resolveClaudeModelCatalog(manifest()), [
+    const catalog = scopeClaudeModelCatalog(catalogFromManifest(manifest()), [
       "synthetic",
       {
         slug: "claude-custom-tuned",

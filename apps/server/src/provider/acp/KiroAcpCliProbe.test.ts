@@ -11,12 +11,12 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 import { describe, expect } from "vite-plus/test";
 
 import { makeKiroAcpRuntime } from "./KiroAcpSupport.ts";
 import { makeKiroCommandInventory } from "./KiroAcpCommands.ts";
-import { checkKiroProviderStatus } from "../Layers/KiroProvider.ts";
+import { checkKiroProviderStatus } from "../KiroProvider.ts";
 import { resolveKiroRequestedModeId } from "../../orchestration-v2/Adapters/KiroAdapterV2.ts";
 
 const decodeKiroSettings = Schema.decodeSync(KiroSettings);

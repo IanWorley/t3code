@@ -11,13 +11,13 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
-import { HttpClient, HttpClientError, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
 
 import {
   codexLaunchArgv,
   consumeCodexLaunchArgsEnvironment,
   resolveCodexLaunchArgs,
-} from "./Layers/codexLaunchArgs.ts";
+} from "./codexLaunchArgs.ts";
 import {
   applyVibeProxyStatus,
   parseVibeProxyUrl,

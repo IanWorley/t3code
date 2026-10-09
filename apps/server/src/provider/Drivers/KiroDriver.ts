@@ -4,12 +4,13 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { HttpClient } from "effect/unstable/http";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { HttpClient } from "effect/http";
+import { ChildProcessSpawner } from "effect/process";
 
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { ServerConfig } from "../../config.ts";
-import { ServerSettingsService } from "../../serverSettings.ts";
+import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
+import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import { makeKiroTextGeneration } from "../../textGeneration/KiroTextGeneration.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import {
@@ -20,27 +21,27 @@ import {
   buildInitialKiroProviderSnapshot,
   checkKiroProviderStatus,
   enrichKiroSnapshot,
-} from "../Layers/KiroProvider.ts";
-import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
-import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
+} from "../KiroProvider.ts";
+import { ProviderEventLoggers } from "@t3tools/provider-core/server/ProviderEventLoggers";
+import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
 import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
   type ProviderInstance,
-} from "../ProviderDriver.ts";
-import type { ServerProviderDraft } from "../providerSnapshot.ts";
-import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
+} from "@t3tools/provider-core/server/driver";
+import type { ServerProviderDraft } from "@t3tools/provider-core/server/snapshotProbe";
+import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import { discoverKiroSkills } from "./KiroSkills.ts";
 import {
   makeProviderMaintenanceCapabilities,
   type ProviderMaintenanceCapabilitiesResolver,
   resolveProviderMaintenanceCapabilitiesEffect,
-} from "../providerMaintenance.ts";
+} from "@t3tools/provider-core/server/maintenanceResolver";
 import {
   haveProviderSnapshotSettingsChanged,
   makeProviderSnapshotSettingsSource,
   type ProviderSnapshotSettings,
-} from "../providerUpdateSettings.ts";
+} from "@t3tools/provider-core/server/snapshotSettings";
 const decodeKiroSettings = Schema.decodeSync(KiroSettings);
 
 const DRIVER_KIND = ProviderDriverKind.make("kiro");
@@ -67,7 +68,8 @@ export type KiroDriverEnv =
   | Path.Path
   | ProviderEventLoggers
   | ServerConfig
-  | ServerSettingsService;
+  | ProviderHost.ProviderHost
+  | ProviderLatestVersions.ProviderLatestVersions;
 
 const withInstanceIdentity =
   (input: {
@@ -98,7 +100,7 @@ export const KiroDriver: ProviderDriver<KiroSettings, KiroDriverEnv> = {
       const crypto = yield* Crypto.Crypto;
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const httpClient = yield* HttpClient.HttpClient;
-      const serverSettings = yield* ServerSettingsService;
+      const latestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const { cwd } = yield* ServerConfig;
@@ -162,7 +164,7 @@ export const KiroDriver: ProviderDriver<KiroSettings, KiroDriverEnv> = {
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       );
 
-      const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
+      const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<KiroSettings>>({
         resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
         getSettings: snapshotSettings.getSettings,
@@ -178,6 +180,7 @@ export const KiroDriver: ProviderDriver<KiroSettings, KiroDriverEnv> = {
             enableProviderUpdateChecks: settings.enableProviderUpdateChecks,
             publishSnapshot,
             httpClient,
+            latestVersions,
           }),
       }).pipe(
         Effect.mapError(

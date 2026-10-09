@@ -17,7 +17,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as Queue from "effect/Queue";
 
 import { kiroTaskEventToSubagentUpdate } from "../../orchestration-v2/Adapters/KiroAdapterV2.ts";
-import type { AcpAdapterV2SubagentUpdate } from "../../orchestration-v2/Adapters/AcpAdapterV2.ts";
+import type { AcpAdapterV2SubagentUpdate } from "@t3tools/provider-acp/server/adapter";
 import capture from "../testFixtures/kiroSubagents.json" with { type: "json" };
 import { makeKiroSubagents } from "./KiroSubagents.ts";
 

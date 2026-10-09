@@ -5,7 +5,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as EffectAcpErrors from "effect-acp/errors";
 
-import type * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
+import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
 
 const KIRO_COMMANDS_AVAILABLE_METHOD = "_kiro.dev/commands/available";
 const KIRO_COMMANDS_EXECUTE_METHOD = "_kiro.dev/commands/execute";
