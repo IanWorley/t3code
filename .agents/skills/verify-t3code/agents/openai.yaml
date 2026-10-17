@@ -1,0 +1,4 @@
+interface:
+  display_name: "Verify T3 Code"
+  short_description: "Launch, doctor, and drive this worktree's T3 web app with evidence"
+  default_prompt: "Use $verify-t3code to launch this worktree's dev stack, run the doctor, drive the affected feature in the Browser panel, and save evidence."
