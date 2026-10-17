@@ -6,7 +6,7 @@ import {
   formatSubagentTokenCount,
   type SubagentUsage,
 } from "@t3tools/client-runtime/state/subagentRuntime";
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text } from "../../components/ui/AppText";
 
 const AGENT_CHAT_ENTRY_GAP = 12;
 

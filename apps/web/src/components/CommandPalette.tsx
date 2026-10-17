@@ -11,13 +11,23 @@ import {
   getCloneDestinationPath,
   getCloneDirectoryName,
   getDefaultCloneUrl,
-  getNewProjectGitHubRepository,
-  getNewProjectGitHubTarget,
   getNewProjectPathPreview,
+  getNewProjectPublishTarget,
+  getNewProjectPublishTargets,
+  getNewProjectRepository,
+  type NewProjectPublishTarget,
   normalizePastedCloneUrl,
   REPOSITORY_SEARCH_DEBOUNCE_MS,
   REPOSITORY_SEARCH_MIN_QUERY_LENGTH,
+  addProjectRemoteSourceLabel,
+  addProjectRemoteSourcePathHint,
+  addProjectRemoteSourceProvider,
+  buildAddProjectRemoteSourceReadiness,
+  sortAddProjectProviderSources,
+  type AddProjectRemoteSource,
+  type AddProjectRemoteSourceReadiness,
 } from "@t3tools/client-runtime/operations/projects";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
@@ -42,7 +52,7 @@ import {
   type FilesystemBrowseResult,
   type ProjectId,
   type SourceControlDiscoveryResult,
-  type SourceControlProviderKind,
+  SourceControlProviderKind,
   type SourceControlRepositoryInfo,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   resolveEnvironmentMachineKind,
@@ -93,6 +103,11 @@ import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstra
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
+import {
+  composerPromptLink,
+  copyPromptLink,
+  promptLinkRepositoryOf,
+} from "./promptLinks/copyPromptLink";
 import { useClientSettings } from "../hooks/useSettings";
 import { useTheme } from "../hooks/useTheme";
 import { useCustomThemes } from "../hooks/useCustomThemes";
@@ -191,7 +206,7 @@ import {
   CommandPaletteVirtualizedResults,
   scrollCommandPaletteRowIntoView,
 } from "./CommandPaletteResults";
-import { AzureDevOpsIcon, BitbucketIcon, GitHubIcon, GitLabIcon, ForgejoIcon } from "./Icons";
+import { sourceControlIcon } from "~/sourceControlPresentation";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { Checkbox } from "./ui/checkbox";
 import { ProjectFavicon } from "./ProjectFavicon";
@@ -205,7 +220,11 @@ import {
   CommandPaletteMetaDot,
   ThreadCommandSubtitle,
 } from "./ThreadCommandSubtitle";
-import { ThreadRowLeadingStatus, ThreadRowTrailingStatus } from "./ThreadStatusIndicators";
+import {
+  ThreadRowLeadingStatus,
+  ThreadRowTrailingStatus,
+  ThreadSearchPullRequestNumber,
+} from "./ThreadStatusIndicators";
 import { primaryServerKeybindingsAtom, primaryServerProvidersAtom } from "../state/server";
 import {
   applyProviderInstanceSettings,
@@ -216,6 +235,7 @@ import { resolveShortcutCommand, threadJumpIndexFromCommand } from "../keybindin
 import { CommandDialog, CommandDialogPopup, CommandFooterAction } from "./ui/command";
 import { Button } from "./ui/button";
 import { Kbd, KbdGroup } from "./ui/kbd";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { ComposerHandleContext, useComposerHandleContext } from "../composerHandleContext";
@@ -254,12 +274,6 @@ interface AddProjectEnvironmentOption {
   readonly status: string;
 }
 
-type AddProjectRemoteProviderKind = Extract<
-  SourceControlProviderKind,
-  "github" | "gitlab" | "forgejo" | "bitbucket" | "azure-devops"
->;
-type AddProjectRemoteSource = AddProjectRemoteProviderKind | "url";
-
 type AddProjectCloneFlow =
   | {
       readonly step: "repository";
@@ -275,78 +289,20 @@ type AddProjectCloneFlow =
       readonly remoteUrl: string;
     };
 
-const REMOTE_PROJECT_SOURCES: ReadonlyArray<AddProjectRemoteSource> = [
-  "url",
-  "github",
-  "gitlab",
-  "forgejo",
-  "bitbucket",
-  "azure-devops",
-];
-const REMOTE_PROJECT_PROVIDER_SOURCES: ReadonlyArray<AddProjectRemoteProviderKind> = [
-  "github",
-  "gitlab",
-  "forgejo",
-  "bitbucket",
-  "azure-devops",
-];
-
-function remoteProjectSourceLabel(source: AddProjectRemoteSource): string {
-  switch (source) {
-    case "github":
-      return "GitHub";
-    case "forgejo":
-      return "Forgejo / Gitea";
-    case "gitlab":
-      return "GitLab";
-    case "bitbucket":
-      return "Bitbucket";
-    case "azure-devops":
-      return "Azure DevOps";
-    case "url":
-      return "Git URL";
-  }
-}
-
-function remoteProjectSourcePathHint(source: AddProjectRemoteSource): string {
-  switch (source) {
-    case "forgejo":
-    case "github":
-      return "owner/repo";
-    case "gitlab":
-      return "group/project";
-    case "bitbucket":
-      return "workspace/repository";
-    case "azure-devops":
-      return "project/repository";
-    case "url":
-      return "URL";
-  }
-}
-
 const REPOSITORY_SEARCH_ITEM_PREFIX = "repository-search:";
 
-function remoteProjectSourceProvider(
-  source: AddProjectRemoteSource,
-): AddProjectRemoteProviderKind | null {
-  return source === "url" ? null : source;
+function remoteProjectSourceIcon(source: AddProjectRemoteSource, className: string): ReactNode {
+  if (source === "url") return <LinkIcon className={className} />;
+  const Icon = sourceControlIcon(sourceControlClients.get(source));
+  return <Icon className={className} />;
 }
 
-function remoteProjectSourceIcon(source: AddProjectRemoteSource, className: string): ReactNode {
-  switch (source) {
-    case "github":
-      return <GitHubIcon className={className} />;
-    case "forgejo":
-      return <ForgejoIcon className={className} />;
-    case "gitlab":
-      return <GitLabIcon className={className} />;
-    case "bitbucket":
-      return <BitbucketIcon className={className} />;
-    case "azure-devops":
-      return <AzureDevOpsIcon className={className} />;
-    case "url":
-      return <LinkIcon className={className} />;
-  }
+function sourceControlHostIcon(
+  definition: NewProjectPublishTarget["definition"],
+  className: string,
+): ReactNode {
+  const Icon = sourceControlIcon(definition);
+  return <Icon className={className} />;
 }
 
 function projectFaviconIcon(project: Project): ReactNode {
@@ -360,81 +316,25 @@ function remoteProjectInputPlaceholder(flow: AddProjectCloneFlow | null): string
     return "Enter Git clone URL";
   }
   const verb = addProjectRemoteSourceSearchable(flow.source) ? "Search" : "Enter";
-  return `${verb} ${remoteProjectSourceLabel(flow.source)} repository (${remoteProjectSourcePathHint(flow.source)})`;
+  return `${verb} ${addProjectRemoteSourceLabel(flow.source)} repository (${addProjectRemoteSourcePathHint(flow.source)})`;
 }
 
-function sourceProviderKind(source: AddProjectRemoteSource): AddProjectRemoteProviderKind | null {
-  return source === "url" ? null : source;
-}
-
-function sortAddProjectProviderSources(
-  readinessBySource: AddProjectRemoteSourceReadiness,
-): ReadonlyArray<AddProjectRemoteProviderKind> {
-  return REMOTE_PROJECT_PROVIDER_SOURCES.toSorted((left, right) => {
-    const leftReady = readinessBySource[left].ready;
-    const rightReady = readinessBySource[right].ready;
-    if (leftReady !== rightReady) {
-      return leftReady ? -1 : 1;
-    }
-    return remoteProjectSourceLabel(left).localeCompare(remoteProjectSourceLabel(right));
-  });
-}
-
-type AddProjectRemoteSourceReadiness = Record<
-  AddProjectRemoteSource,
-  { readonly ready: boolean; readonly hint: string | null }
->;
-
-function buildAddProjectRemoteSourceReadiness(
+function buildPaletteRemoteSourceReadiness(
   discovery: SourceControlDiscoveryResult | null,
 ): AddProjectRemoteSourceReadiness {
-  const unavailable = {
-    ready: false,
-    hint: "Provider status unavailable. Open Settings -> Source Control and rescan.",
-  } as const;
-  const defaultReadiness: AddProjectRemoteSourceReadiness = {
-    url: { ready: true, hint: null },
-    github: unavailable,
-    gitlab: unavailable,
-    forgejo: unavailable,
-    bitbucket: unavailable,
-    "azure-devops": unavailable,
+  const readiness = buildAddProjectRemoteSourceReadiness(discovery);
+  return (source) => {
+    const entry = readiness(source);
+    return entry.hint === null
+      ? entry
+      : {
+          ...entry,
+          hint: entry.hint.replace(
+            "Open Source Control settings",
+            "Open Settings -> Source Control",
+          ),
+        };
   };
-
-  if (!discovery) {
-    return defaultReadiness;
-  }
-
-  const providerByKind = new Map(
-    discovery.sourceControlProviders.map((provider) => [provider.kind, provider]),
-  );
-  const readiness = { ...defaultReadiness };
-
-  for (const source of REMOTE_PROJECT_SOURCES) {
-    const kind = sourceProviderKind(source);
-    if (!kind) continue;
-    const provider = providerByKind.get(kind);
-    if (!provider) {
-      readiness[source] = unavailable;
-      continue;
-    }
-    if (provider.status !== "available") {
-      readiness[source] = { ready: false, hint: provider.installHint };
-      continue;
-    }
-    if (provider.auth.status === "unauthenticated") {
-      readiness[source] = {
-        ready: false,
-        hint:
-          Option.getOrNull(provider.auth.detail) ??
-          `${provider.label} is not authenticated. Open Settings -> Source Control for setup guidance.`,
-      };
-      continue;
-    }
-    readiness[source] = { ready: true, hint: null };
-  }
-
-  return readiness;
 }
 
 function errorMessage(error: unknown): string {
@@ -526,8 +426,6 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.defaultPrevented) return;
-      // Resolve with the complete shortcut context so customized bindings
-      // using any documented `when` condition (e.g. previewFocus) work.
       const command = resolveShortcutCommand(event, keybindings, {
         context: {
           terminalFocus: isTerminalFocused(),
@@ -635,7 +533,6 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           setOpen(open);
         }}
       >
-        {/* Block background focus calls for the entire time the palette is open. */}
         <div className="contents" inert={state.open}>
           {children}
         </div>
@@ -714,9 +611,6 @@ function OpenCommandPaletteDialog(props: {
   const isActionsOnly = deferredQuery.startsWith(">");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
   const resultListRef = useRef<LegendListRef | null>(null);
-  // Typing or entering a submenu clears the highlight. Base UI keeps its own on the
-  // first row, but the palette shows none until the user navigates, and the first
-  // ArrowDown lands on it.
   const highlightClearedRef = useRef(false);
   function clearTypedHighlight(): void {
     highlightClearedRef.current = true;
@@ -752,6 +646,10 @@ function OpenCommandPaletteDialog(props: {
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
+  const paletteRouteTarget = useParams({
+    strict: false,
+    select: (params) => resolveThreadRouteTarget(params),
+  });
   const projects = useProjects();
   const referenceThreadRef =
     pathname === "/pull-requests"
@@ -835,10 +733,8 @@ function OpenCommandPaletteDialog(props: {
         serverConfig?.providers ??
         (environment.environmentId === primaryEnvironmentId ? providers : []);
       const derived = deriveProviderInstanceEntries(environmentProviders);
-      // Settings fill the ACP registry identity (agent id, icon URL) the
-      // derived entries alone do not carry.
       const entries = serverConfig
-        ? applyProviderInstanceSettings(derived, serverConfig.settings)
+        ? applyProviderInstanceSettings(derived, serverConfig.settings, null)
         : derived;
       for (const entry of entries) {
         map.set(`${environment.environmentId}:${entry.instanceId}`, entry);
@@ -881,13 +777,14 @@ function OpenCommandPaletteDialog(props: {
   );
   const [isPickingProjectFolder, setIsPickingProjectFolder] = useState(false);
   const [addProjectCloneFlow, setAddProjectCloneFlow] = useState<AddProjectCloneFlow | null>(null);
-  // The name step of New project: while set, the palette input is the name.
   const [newProjectFlow, setNewProjectFlow] = useState<{
     readonly environmentId: EnvironmentId;
-    /** Machine of the Add project sources view under this step; null from the palette root. */
     readonly sourcesEnvironmentId: EnvironmentId | null;
   } | null>(null);
-  const [newProjectPublishesToGitHub, setNewProjectPublishesToGitHub] = useState(false);
+  const [newProjectPublishes, setNewProjectPublishes] = useState(false);
+  const [newProjectPublishKind, setNewProjectPublishKind] =
+    useState<SourceControlProviderKind | null>(null);
+  const [newProjectHostPickerOpen, setNewProjectHostPickerOpen] = useState(false);
   const [isCreatingNewProject, setIsCreatingNewProject] = useState(false);
   // State lags a render behind, so a repeated Enter could start a second create.
   const newProjectSubmittingRef = useRef(false);
@@ -1054,16 +951,12 @@ function OpenCommandPaletteDialog(props: {
   const canCreateProject = useEnvironmentScope(browseEnvironmentId, AuthOrchestrationOperateScope);
   const browseEnvironment =
     environments.find((environment) => environment.environmentId === browseEnvironmentId) ?? null;
-  // A desktop-local secondary backend (today: the WSL backend). The picker is
-  // available against these too — the desktop dispatches pickFolder into the
-  // backend's filesystem when routed by its instance id.
   const browseEnvironmentIsDesktopLocal =
     browseEnvironment !== null && isDesktopLocalConnectionTarget(browseEnvironment.entry.target);
   // Map the browsed desktop-local env to its desktop pool instance id (e.g.
   // "wsl:ubuntu"). The catalog environmentId is descriptor-derived and won't
   // route on the desktop side; pickFolder only recognizes the pool id, which
-  // the bootstrap list exposes. Match on backend URL, exactly as Sidebar's
-  // LocalSecondaryStatus does (environment.displayUrl === bootstrap.httpBaseUrl).
+  // the bootstrap list exposes.
   const browseDesktopInstanceId = useMemo(() => {
     if (!browseEnvironmentIsDesktopLocal || browseEnvironment === null) {
       return null;
@@ -1107,10 +1000,6 @@ function OpenCommandPaletteDialog(props: {
   );
   const isRemoteProjectCloneFlow = addProjectCloneFlow !== null;
   const isRemoteProjectRepositoryStep = addProjectCloneFlow?.step === "repository";
-  // The destination step pins the repository folder onto the browsed path, so
-  // the proposed clone target is "<chosen folder>/<repo>" instead of the bare
-  // folder. A lookup reports "owner/repo"; a pasted clone URL falls back to its
-  // own last segment, minus ".git".
   const pinnedCloneDirectoryName =
     addProjectCloneFlow?.step === "confirm"
       ? getCloneDirectoryName(
@@ -1171,8 +1060,6 @@ function OpenCommandPaletteDialog(props: {
   const currentProjectEnvironmentId =
     activeThread?.environmentId ?? activeDraftThread?.environmentId ?? null;
   const currentProjectId = activeThread?.projectId ?? activeDraftThread?.projectId ?? null;
-  // Where "without a project" threads start: the current environment when it
-  // offers them, otherwise the first connected one that does.
   const scratchTargetEnvironmentId = scratchEnvironmentId(
     currentProjectEnvironmentId ?? primaryEnvironmentId,
   );
@@ -1359,7 +1246,6 @@ function OpenCommandPaletteDialog(props: {
       isScratchProject(project, scratchWorkspaceRootFor(project.environmentId));
     const projectItems = enumerateCommandPaletteItems(
       buildProjectActionItems({
-        // The no-project home shows once, as the "No project" item below.
         projects: pickerProjects.filter((project) => !isScratch(project)),
         valuePrefix: "new-thread-in",
         searchTerms: (project) => {
@@ -1414,10 +1300,6 @@ function OpenCommandPaletteDialog(props: {
     );
     if (scratchTargetEnvironmentId === null) return projectItems;
 
-    // "No project" goes right after the current project: visible without
-    // scrolling past every project, while Enter still starts in the current
-    // one. When the current thread has no project, it is the current entry and
-    // goes first. It keeps its own shortcut, so the projects' mod+1..9 hold.
     const noProjectIndex = pickerProjects[0] !== undefined && isScratch(pickerProjects[0]) ? 0 : 1;
     return [
       ...projectItems.slice(0, noProjectIndex),
@@ -1452,7 +1334,16 @@ function OpenCommandPaletteDialog(props: {
         sortOrder: clientSettings.sidebarThreadSortOrder,
         icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
         renderLeadingContent: (thread) => <ThreadRowLeadingStatus thread={thread} />,
-        renderTrailingContent: (thread) => <ThreadRowTrailingStatus thread={thread} />,
+        renderTrailingContent: (thread) => (
+          <>
+            <ThreadSearchPullRequestNumber
+              thread={thread}
+              query={threadSearchQuery}
+              settled={thread.settledOverride === "settled"}
+            />
+            <ThreadRowTrailingStatus thread={thread} />
+          </>
+        ),
         renderDescription: (thread, { projectTitle }) => {
           const modelInstanceId =
             thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId;
@@ -1512,6 +1403,7 @@ function OpenCommandPaletteDialog(props: {
       providerEntryByEnvironmentAndInstanceId,
       threadContentMatchByKey,
       threadSearch.query,
+      threadSearchQuery,
       threads,
     ],
   );
@@ -1550,7 +1442,6 @@ function OpenCommandPaletteDialog(props: {
     if (viewStack.length <= 1) {
       setAddProjectEnvironmentId(null);
     } else if (newProjectFlow?.sourcesEnvironmentId) {
-      // The machine switcher may have moved off the sources view's machine.
       setAddProjectEnvironmentId(newProjectFlow.sourcesEnvironmentId);
     }
     setViewStack((previousViews) => previousViews.slice(0, -1));
@@ -1612,7 +1503,6 @@ function OpenCommandPaletteDialog(props: {
     [pushPaletteView],
   );
 
-  /** Folder that holds an environment's name-only projects, or null when it has none. */
   const newProjectsRootFor = useCallback(
     (environmentId: EnvironmentId | null): string | null =>
       environments.find((environment) => environment.environmentId === environmentId)?.serverConfig
@@ -1625,7 +1515,8 @@ function OpenCommandPaletteDialog(props: {
       setAddProjectEnvironmentId(environmentId);
       setAddProjectCloneFlow(null);
       setNewProjectFlow({ environmentId, sourcesEnvironmentId });
-      setNewProjectPublishesToGitHub(false);
+      setNewProjectPublishes(false);
+      setNewProjectPublishKind(null);
       pushPaletteView({
         addonIcon: <FolderGit2Icon className={ADDON_ICON_CLASS} />,
         groups: [],
@@ -1680,13 +1571,13 @@ function OpenCommandPaletteDialog(props: {
       ];
 
       for (const source of orderedSources) {
-        const label = remoteProjectSourceLabel(source);
+        const label = addProjectRemoteSourceLabel(source);
         const title = source === "url" ? "Git URL" : `${label} repository`;
         const description =
           source === "url"
             ? "Clone from a remote URL"
-            : `Clone ${label} ${remoteProjectSourcePathHint(source)}`;
-        const readiness = readinessBySource[source];
+            : `Clone ${label} ${addProjectRemoteSourcePathHint(source)}`;
+        const readiness = readinessBySource(source);
         const disabledHint = readiness.hint;
 
         const titleTrailingContent = readiness.ready ? undefined : (
@@ -1774,7 +1665,7 @@ function OpenCommandPaletteDialog(props: {
         addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
         groups: buildAddProjectSourceGroups(
           environmentId,
-          buildAddProjectRemoteSourceReadiness(
+          buildPaletteRemoteSourceReadiness(
             browseEnvironmentId === environmentId ? sourceControlDiscovery.data : null,
           ),
         ),
@@ -1833,8 +1724,6 @@ function OpenCommandPaletteDialog(props: {
   );
 
   const openAddProjectFlow = useCallback(() => {
-    // With no connected environment there is nothing to browse, so the only
-    // useful next step is connecting one.
     if (addProjectEnvironmentOptions.length === 0) {
       setOpen(false);
       void navigate({ to: "/settings/connections" });
@@ -1860,8 +1749,6 @@ function OpenCommandPaletteDialog(props: {
     startAddProjectSourceSelection,
   ]);
 
-  // New project starts on this device (options list it first); the name step
-  // lists the other machines when there is a choice.
   const openNewProjectFlow = () => {
     const firstOption = newProjectEnvironmentOptions[0];
     if (firstOption) startNewProject(firstOption.environmentId, null);
@@ -1898,7 +1785,6 @@ function OpenCommandPaletteDialog(props: {
     setNewProjectFlow(null);
     setViewStack([]);
     setQuery("");
-    // projectThreadItems already lists the current project first.
     pushPaletteView({
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
@@ -1923,7 +1809,7 @@ function OpenCommandPaletteDialog(props: {
           </>
         ),
         icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
-        shortcutCommand: "chat.new",
+        shortcutCommand: "chat.newLocal",
         run: async () => {
           await startNewThreadFromContext({
             activeDraftThread,
@@ -1970,6 +1856,55 @@ function OpenCommandPaletteDialog(props: {
         requestThreadFindOpen();
       },
     });
+  }
+
+  const promptLinkTarget = paletteRouteTarget
+    ? paletteRouteTarget.kind === "server"
+      ? paletteRouteTarget.threadRef
+      : paletteRouteTarget.draftId
+    : null;
+  const promptLinkProjectRef = activeThread ?? activeDraftThread;
+  const promptLinkInput =
+    promptLinkTarget === null
+      ? null
+      : {
+          target: promptLinkTarget,
+          project: projects.find(
+            (project) =>
+              project.environmentId === promptLinkProjectRef?.environmentId &&
+              project.id === promptLinkProjectRef.projectId,
+          ),
+          providers:
+            environments.find(
+              (environment) => environment.environmentId === promptLinkProjectRef?.environmentId,
+            )?.serverConfig?.providers ?? [],
+          threadModelSelection: activeThread?.modelSelection ?? null,
+        };
+  const plainPromptLink = promptLinkInput
+    ? composerPromptLink({ ...promptLinkInput, withContext: false })
+    : null;
+  if (promptLinkInput !== null && plainPromptLink !== null) {
+    actionItems.push({
+      kind: "action",
+      value: "action:copy-prompt-link",
+      searchTerms: ["copy", "share", "prompt", "link"],
+      title: "Copy prompt link",
+      icon: <LinkIcon className={ITEM_ICON_CLASS} />,
+      run: () => copyPromptLink(plainPromptLink),
+    });
+    if (promptLinkRepositoryOf(promptLinkInput.project) !== null) {
+      const contextLink = composerPromptLink({ ...promptLinkInput, withContext: true });
+      if (contextLink !== null) {
+        actionItems.push({
+          kind: "action",
+          value: "action:copy-prompt-link-with-context",
+          searchTerms: ["copy", "share", "prompt", "link", "repository", "model"],
+          title: "Copy prompt link with repo and model",
+          icon: <LinkIcon className={ITEM_ICON_CLASS} />,
+          run: () => copyPromptLink(contextLink),
+        });
+      }
+    }
   }
 
   if (activeThreadReferenceCopyTarget !== null) {
@@ -2024,10 +1959,6 @@ function OpenCommandPaletteDialog(props: {
       searchTerms: ["restart", "reset", "reload", "agent", "session", "skills", "plugins", "mcp"],
       title: "Restart agent session",
       icon: <RotateCcwIcon className={ITEM_ICON_CLASS} />,
-      // Stopping the provider process keeps the conversation: the next message
-      // spawns a fresh one that resumes it and reloads skills, plugins, and MCP
-      // servers. The fresh workspace scan updates the composer's slash menu.
-      // Failures throw into executeItem's error toast.
       run: async () => {
         const { environmentId } = thread;
         if (thread.runtime !== null) {
@@ -2037,8 +1968,6 @@ function OpenCommandPaletteDialog(props: {
           });
           if (stopped._tag === "Failure") throw squashAtomCommandFailure(stopped);
         }
-        // The server stops the process after accepting the command. A failed
-        // stop shows in the thread.
         toastManager.add({
           type: "success",
           title: "Agent session will restart",
@@ -2112,12 +2041,12 @@ function OpenCommandPaletteDialog(props: {
       "repository",
       "repo",
       "git",
-      "github",
-      "gitlab",
-      "forgejo",
-      "bitbucket",
-      "azure",
-      "devops",
+      ...sourceControlClients.definitions.flatMap((definition) =>
+        definition.pickerLabel
+          .toLowerCase()
+          .split(/[^a-z0-9]+/u)
+          .filter(Boolean),
+      ),
       "url",
       "environment",
     ],
@@ -2295,7 +2224,6 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
-  // Target the active thread or draft's project, falling back to the first sidebar group.
   const contextualProjectGroup =
     (contextualProjectRef
       ? projectGroupByTargetKey.get(
@@ -2362,7 +2290,7 @@ function OpenCommandPaletteDialog(props: {
     currentView.groups[0]?.value === sourceSelectionViewValue
       ? buildAddProjectSourceGroups(
           addProjectEnvironmentId,
-          buildAddProjectRemoteSourceReadiness(sourceControlDiscovery.data),
+          buildPaletteRemoteSourceReadiness(sourceControlDiscovery.data),
         )
       : currentView?.groups[0]?.value === "themes"
         ? changeThemeItem.groups
@@ -2559,8 +2487,12 @@ function OpenCommandPaletteDialog(props: {
     ],
   );
 
-  const newProjectGitHubTarget =
-    newProjectFlow === null ? null : getNewProjectGitHubTarget(sourceControlDiscovery.data ?? null);
+  const newProjectPublishTargets =
+    newProjectFlow === null ? [] : getNewProjectPublishTargets(sourceControlDiscovery.data ?? null);
+  const newProjectPublishTarget = getNewProjectPublishTarget(
+    newProjectPublishTargets,
+    newProjectPublishKind,
+  );
   const newProjectName = query.trim();
   const canSubmitNewProject =
     newProjectFlow !== null &&
@@ -2578,7 +2510,7 @@ function OpenCommandPaletteDialog(props: {
       const created = await createNewProject({
         environmentId: newProjectFlow.environmentId,
         name: newProjectName,
-        github: newProjectPublishesToGitHub ? newProjectGitHubTarget : null,
+        publishTo: newProjectPublishes ? newProjectPublishTarget : null,
       });
       if (created) setOpen(false);
     } finally {
@@ -2616,7 +2548,7 @@ function OpenCommandPaletteDialog(props: {
         return;
       }
 
-      const provider = remoteProjectSourceProvider(addProjectCloneFlow.source);
+      const provider = addProjectRemoteSourceProvider(addProjectCloneFlow.source);
       if (!provider) {
         const destinationPath = getCloneDestinationPath(
           getDefaultCloneParentPath(addProjectCloneFlow.environmentId),
@@ -2752,10 +2684,6 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
-    // The server creates the project and clones in the background; progress
-    // shows in a toast and in the draft's composer banner, so the palette
-    // closes as soon as the clone is under way. Only problems found before
-    // git runs (bad destination, unknown repository) come back here.
     const projectId = newProjectId();
     setIsRemoteProjectCloning(true);
     const startResult = await startProjectClone({
@@ -2783,9 +2711,6 @@ function OpenCommandPaletteDialog(props: {
     }
     setOpen(false);
     const projectRef = scopeProjectRef(addProjectCloneFlow.environmentId, projectId);
-    // The create event usually lands before this call returns; give the shell
-    // stream a moment so the draft opens with its project resolved instead of
-    // flashing the project picker.
     await waitForProject(projectRef, 3_000).catch(() => null);
     const navigationResult = await settlePromise(() => handleNewThread(projectRef));
     if (navigationResult._tag === "Failure") {
@@ -2846,10 +2771,6 @@ function OpenCommandPaletteDialog(props: {
     );
   }, [browseNavigation, browsePath.parentPath, pinnedCloneDirectoryName, prefetchBrowsePath]);
 
-  // Resolve the add-project path from browse data when available. When the
-  // query has a trailing separator (e.g. "~/projects/foo/"), parentPath is the
-  // directory itself. Otherwise the user typed a partial leaf name, so we need
-  // the exact browse entry's fullPath or fall back to the raw query.
   const resolvedAddProjectPath = hasTrailingPathSeparator(query)
     ? (browseResult?.parentPath ?? query.trim())
     : (exactBrowseEntry?.fullPath ?? query.trim());
@@ -2888,10 +2809,7 @@ function OpenCommandPaletteDialog(props: {
   const newProjectsRoot = newProjectFlow ? newProjectsRootFor(newProjectFlow.environmentId) : null;
   const newProjectPathPreview =
     newProjectsRoot === null ? null : getNewProjectPathPreview(newProjectsRoot, newProjectName);
-  const newProjectGitHubToggleValue = "new-project:github";
-  // The name step's way out to folders and clones, for the selected machine.
-  // It replaces the name step (and a sources view for another machine under
-  // it), so Back returns to wherever New project was opened from.
+  const newProjectPublishToggleValue = "new-project:publish";
   const showExistingProjectSources = (environmentId: EnvironmentId) => {
     const sourcesEnvironmentId = newProjectFlow?.sourcesEnvironmentId ?? null;
     if (sourcesEnvironmentId === environmentId) {
@@ -2904,8 +2822,6 @@ function OpenCommandPaletteDialog(props: {
     popView();
     startAddProjectSourceSelection(environmentId);
   };
-  // Switching machines keeps the typed name; the GitHub option follows the
-  // machine because source control discovery reads addProjectEnvironmentId.
   const switchNewProjectEnvironment = (environmentId: EnvironmentId) => {
     setNewProjectFlow((flow) => (flow === null ? flow : { ...flow, environmentId }));
     setAddProjectEnvironmentId(environmentId);
@@ -2916,8 +2832,6 @@ function OpenCommandPaletteDialog(props: {
       : newProjectEnvironmentOptions.find(
           (option) => option.environmentId === newProjectFlow.environmentId,
         );
-  // Shown when there is a choice, or when the selected machine went away and
-  // another one can take over.
   const showNewProjectMachines =
     newProjectFlow !== null &&
     (newProjectEnvironmentOptions.length > 1 ||
@@ -2939,7 +2853,6 @@ function OpenCommandPaletteDialog(props: {
               `new-project:environment:${option.environmentId}`,
               switchNewProjectEnvironment,
             ),
-            // The create in flight keeps the machine it started on.
             ...(isCreatingNewProject ? { disabled: true } : {}),
             ...(option.environmentId === newProjectFlow.environmentId
               ? {
@@ -2975,7 +2888,7 @@ function OpenCommandPaletteDialog(props: {
           ],
         };
   const newProjectOptionGroups: CommandPaletteView["groups"] =
-    newProjectGitHubTarget === null || newProjectPathPreview === null
+    newProjectPublishTarget === null || newProjectPathPreview === null
       ? []
       : [
           {
@@ -2984,22 +2897,80 @@ function OpenCommandPaletteDialog(props: {
             items: [
               {
                 kind: "action",
-                value: newProjectGitHubToggleValue,
+                value: newProjectPublishToggleValue,
                 searchTerms: [],
-                title: "Create private repository on GitHub",
+                title:
+                  newProjectPublishTargets.length > 1
+                    ? "Create private repository"
+                    : `Create private repository on ${newProjectPublishTarget.definition.label}`,
                 description:
                   newProjectName.length > 0
-                    ? getNewProjectGitHubRepository(newProjectGitHubTarget, newProjectPathPreview)
-                    : (newProjectGitHubTarget.account ?? "Your GitHub account"),
-                icon: <GitHubIcon className={ITEM_ICON_CLASS} />,
+                    ? getNewProjectRepository(newProjectPublishTarget, newProjectPathPreview)
+                    : (newProjectPublishTarget.owner ??
+                      `Your ${newProjectPublishTarget.definition.label} account`),
+                icon: sourceControlHostIcon(newProjectPublishTarget.definition, ITEM_ICON_CLASS),
                 titleTrailingContent: (
-                  <span className="pointer-events-none ms-auto flex">
-                    <Checkbox checked={newProjectPublishesToGitHub} tabIndex={-1} aria-hidden />
+                  <span className="ms-auto flex items-center gap-2">
+                    {newProjectPublishTargets.length > 1 ? (
+                      // The row toggles on click, so the picker keeps its clicks to itself. The
+                      // row also cancels pointerdown to keep focus in the input, which drops the
+                      // mousedown Select opens on, so the picker opens on click instead.
+                      <span
+                        className="flex"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          // React bubbles the popup's clicks here through its portal; only the
+                          // trigger opens the picker.
+                          if (!event.currentTarget.contains(event.target as Node)) return;
+                          if (!isCreatingNewProject) setNewProjectHostPickerOpen(true);
+                        }}
+                      >
+                        <Select
+                          disabled={isCreatingNewProject}
+                          open={newProjectHostPickerOpen}
+                          onOpenChange={setNewProjectHostPickerOpen}
+                          value={newProjectPublishTarget.definition.kind}
+                          onValueChange={(kind) => {
+                            if (kind !== null) setNewProjectPublishKind(kind);
+                          }}
+                        >
+                          <SelectTrigger
+                            size="xs"
+                            variant="ghost"
+                            aria-label="Host for the new repository"
+                          >
+                            <SelectValue>
+                              {(kind: SourceControlProviderKind) =>
+                                sourceControlClients.get(kind).label
+                              }
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectPopup align="end" alignItemWithTrigger={false}>
+                            {newProjectPublishTargets.map((target) => (
+                              <SelectItem
+                                key={target.definition.kind}
+                                hideIndicator
+                                value={target.definition.kind}
+                              >
+                                <span className="inline-flex items-center gap-1.5">
+                                  {sourceControlHostIcon(target.definition, "size-3.5")}
+                                  {target.definition.label}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectPopup>
+                        </Select>
+                      </span>
+                    ) : null}
+                    <span className="pointer-events-none flex">
+                      <Checkbox checked={newProjectPublishes} tabIndex={-1} aria-hidden />
+                    </span>
                   </span>
                 ),
+                ...(isCreatingNewProject ? { disabled: true } : {}),
                 keepOpen: true,
                 run: async () => {
-                  setNewProjectPublishesToGitHub((publishes) => !publishes);
+                  setNewProjectPublishes((publishes) => !publishes);
                 },
               },
             ],
@@ -3008,6 +2979,10 @@ function OpenCommandPaletteDialog(props: {
 
   const repositorySearchMatches =
     repositorySearchSource === null ? [] : (repositorySearch.data?.repositories ?? []);
+  const repositorySearchIcon =
+    repositorySearchSource === null
+      ? null
+      : remoteProjectSourceIcon(repositorySearchSource.provider, ITEM_ICON_CLASS);
   const repositorySearchGroups: CommandPaletteView["groups"] =
     repositorySearchMatches.length === 0
       ? []
@@ -3021,7 +2996,7 @@ function OpenCommandPaletteDialog(props: {
               searchTerms: [],
               title: repository.nameWithOwner,
               ...(repository.description ? { description: repository.description } : {}),
-              icon: <GitHubIcon className={ITEM_ICON_CLASS} />,
+              icon: repositorySearchIcon,
               ...(repository.visibility === "private"
                 ? {
                     titleTrailingContent: (
@@ -3095,6 +3070,10 @@ function OpenCommandPaletteDialog(props: {
       ? "Create & Add"
       : "Add";
   const addShortcutLabel = hasHighlightedBrowseItem ? `${submitModifierLabel} Enter` : "Enter";
+  const hasHighlightedNewProjectItem = newProjectFlow !== null && highlightedItemValue !== null;
+  const createShortcutLabel = hasHighlightedNewProjectItem
+    ? `${submitModifierLabel} Enter`
+    : "Enter";
   const remoteProjectButtonLabel = addProjectCloneFlow
     ? addProjectCloneFlow.source === "url"
       ? "Continue"
@@ -3110,11 +3089,6 @@ function OpenCommandPaletteDialog(props: {
   const canOpenProjectFromFileManager =
     isBrowsing &&
     browseEnvironmentId !== null &&
-    // For a desktop-local (WSL) env, only offer the picker once we have resolved
-    // its desktop pool instance id. Without it pickFolder can't be routed to the
-    // WSL filesystem and would open the primary (Windows) picker, then add the
-    // chosen Windows path against the WSL env -- a wrong-path footgun. Stay
-    // hidden until the bootstrap mapping is available rather than mis-routing.
     (browseEnvironmentId === primaryEnvironmentId ||
       (browseEnvironmentIsDesktopLocal && browseDesktopInstanceId !== null)) &&
     typeof window !== "undefined" &&
@@ -3192,16 +3166,16 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
-    // Enter creates the project unless an item below the name is
-    // highlighted, in which case it runs that item.
     if (
       newProjectFlow !== null &&
       event.key === "Enter" &&
-      highlightedItemValue === null &&
+      (!hasHighlightedNewProjectItem || isPrimaryModifierPressed(event)) &&
       // Enter that confirms an IME composition is part of typing the name.
       !event.nativeEvent.isComposing &&
       event.keyCode !== 229
     ) {
+      // Base UI would otherwise also click the highlighted row.
+      (event as typeof event & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
       event.preventDefault();
       void submitNewProject();
       return;
@@ -3228,9 +3202,7 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
-    // Base UI ignores navigation keys with modifiers, so these fallbacks do too.
     if (event.ctrlKey || event.shiftKey || event.altKey || event.metaKey) return;
-    // Base UI only keeps a hidden highlight on the first row when it auto-highlights.
     const firstItemValue = autoHighlightsFirstRow ? resultRows.itemValues[0] : undefined;
     if (
       event.key === "ArrowDown" &&
@@ -3307,9 +3279,6 @@ function OpenCommandPaletteDialog(props: {
         browseEnvironmentId === primaryEnvironmentId && browseEnvironmentPlatform === "Linux"
           ? ((await window.desktopBridge?.getWslState().catch(() => null)) ?? null)
           : null;
-      // Route the picker to the browsed env's backend filesystem. The desktop
-      // only resolves a "wsl:*" pool instance id, so for a desktop-local env we
-      // pass the bootstrap-mapped instance id (not the catalog environmentId).
       // A WSL-only primary has no secondary bootstrap, so resolve its instance
       // id from desktop settings. Windows and combo-mode primaries still omit
       // the target to preserve the native primary picker. The desktop converts
@@ -3328,7 +3297,6 @@ function OpenCommandPaletteDialog(props: {
         Object.keys(pickerOptions).length > 0 ? pickerOptions : undefined,
       );
     } catch {
-      // Ignore picker failures and leave the palette open.
       setIsPickingProjectFolder(false);
       return;
     }
@@ -3345,9 +3313,7 @@ function OpenCommandPaletteDialog(props: {
             ?.getLocalEnvironmentBootstraps()
             .find((bootstrap) => bootstrap.id === PRIMARY_LOCAL_ENVIRONMENT_ID)?.runningDistro ??
           null;
-      } catch {
-        // Keep UNC routing strict when the live primary identity cannot be read.
-      }
+      } catch {}
       const selection = resolveWslProjectSelection(
         pickedPath,
         applyWslEnvironmentConfiguration(
@@ -3411,7 +3377,7 @@ function OpenCommandPaletteDialog(props: {
               size="xs"
               tabIndex={-1}
               className="absolute inset-e-2.5 top-1/2 -translate-y-1/2"
-              aria-label="Create (Enter)"
+              aria-label={`Create (${createShortcutLabel})`}
               disabled={!canSubmitNewProject}
               onMouseDown={(event) => {
                 event.preventDefault();
@@ -3424,10 +3390,10 @@ function OpenCommandPaletteDialog(props: {
         >
           <span>{isCreatingNewProject ? "Creating" : "Create"}</span>
           <KbdGroup className="pointer-events-none -me-0.5">
-            <Kbd>Enter</Kbd>
+            <Kbd>{createShortcutLabel}</Kbd>
           </KbdGroup>
         </TooltipTrigger>
-        <TooltipPopup side="top">Create (Enter)</TooltipPopup>
+        <TooltipPopup side="top">{`Create (${createShortcutLabel})`}</TooltipPopup>
       </Tooltip>
     ) : addProjectCloneFlow?.step === "repository" ? (
       <Tooltip>
@@ -3509,7 +3475,7 @@ function OpenCommandPaletteDialog(props: {
     newProjectFlow !== null
       ? highlightedItemValue === null
         ? "Create"
-        : highlightedItemValue === newProjectGitHubToggleValue
+        : highlightedItemValue === newProjectPublishToggleValue
           ? "Toggle"
           : "Select"
       : addProjectCloneFlow?.step === "repository"
@@ -3538,10 +3504,9 @@ function OpenCommandPaletteDialog(props: {
       footerTrailing={footerTrailing}
       inputAccessory={inputAccessory}
       inputProps={{
-        // The submit button is absolutely positioned over the field, so the
-        // inner input must reserve enough room for the full action label.
-        className:
-          addProjectCloneFlow?.step === "repository" || newProjectFlow !== null
+        className: hasHighlightedNewProjectItem
+          ? "*:data-[slot=autocomplete-input]:pe-38!"
+          : addProjectCloneFlow?.step === "repository" || newProjectFlow !== null
             ? "*:data-[slot=autocomplete-input]:pe-32!"
             : isBrowsing
               ? browseInputEndPaddingClass({

@@ -6,7 +6,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -37,10 +37,10 @@ import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 const driver = (value: string) => ProviderDriverKind.make(value);
 // These write `#!/bin/sh` stubs and evaluate them with darwin/linux path
 // semantics; a Windows temp path cannot be split on `:`.
-const windowsHost = HostProcessPlatform.defaultValue() === "win32";
+const windowsHost = HostProcess.Platform.defaultValue() === "win32";
 const makeTempDir = (name: string) =>
   Crypto.Crypto.pipe(
-    Effect.flatMap((crypto) => crypto.randomUUIDv4),
+    Effect.flatMap((crypto) => crypto.randomUUIDv4()),
     Effect.map((id) => NodePath.join(NodeFS.realpathSync(NodeOS.tmpdir()), `${name}-${id}`)),
   );
 const isNativeTestCommandPath =
@@ -85,7 +85,6 @@ function writeExecutable(path: string) {
   NodeFS.chmodSync(path, 0o755);
 }
 
-/** Symlink `<tempDir>/bin/<name>` into a package entry point, like npm/pnpm do. */
 function linkIntoPackage(tempDir: string, name: string, packageSegments: ReadonlyArray<string>) {
   const target = NodePath.join(tempDir, ...packageSegments, "bin", `${name}.js`);
   writeExecutable(target);
@@ -284,7 +283,6 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
         "@openai/codex",
       ),
     ).toBe("/usr/local");
-    // A copy nested inside another package is not a global install.
     expect(
       npmGlobalPrefixFromCommandPath(
         "/usr/local/lib/node_modules/other/node_modules/@openai/codex/bin/codex.js",
@@ -297,7 +295,6 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
         "@openai/codex",
       ),
     ).toBe("/");
-    // Neither is a project-local dependency.
     expect(
       npmGlobalPrefixFromCommandPath(
         "/work/app/node_modules/@openai/codex/bin/codex.js",
@@ -332,7 +329,7 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
           env: {},
           platform: "win32",
         },
-      ).pipe(Effect.provideService(HostProcessPlatform, "win32"));
+      ).pipe(Effect.provideService(HostProcess.Platform, "win32"));
 
       expect(capabilities.update).toMatchObject({
         executable: visiblePath,
@@ -360,7 +357,7 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
         binaryPath: shim,
         env: { PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" },
       }).pipe(
-        Effect.provideService(HostProcessPlatform, "win32"),
+        Effect.provideService(HostProcess.Platform, "win32"),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
       );
 
@@ -369,14 +366,13 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
         args: ["install", "-g", "--prefix", tempDir, expect.any(String), expect.any(String)],
       });
 
-      // The same layout on POSIX is a project checkout, not a global install.
       const script = NodePath.join(tempDir, "package-tool");
       writeExecutable(script);
       const posix = yield* resolveProviderMaintenanceCapabilitiesEffect(packageToolUpdate, {
         binaryPath: script,
         env: { PATH: "" },
       }).pipe(
-        Effect.provideService(HostProcessPlatform, "linux"),
+        Effect.provideService(HostProcess.Platform, "linux"),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
       );
       expect(posix.update).toBeNull();
@@ -429,7 +425,7 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
             env: { PATH: bunBinDir },
           },
         ).pipe(
-          Effect.provideService(HostProcessPlatform, "darwin"),
+          Effect.provideService(HostProcess.Platform, "darwin"),
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
         );
 
@@ -454,7 +450,7 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
           env: { PATH: nativeBinDir },
         },
       ).pipe(
-        Effect.provideService(HostProcessPlatform, "darwin"),
+        Effect.provideService(HostProcess.Platform, "darwin"),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
       );
 
@@ -471,8 +467,6 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
     }),
   );
 
-  // Regression for #9850: an explicit native path outside PATH, with spaces,
-  // must be what actually gets spawned.
   it.effect.skipIf(windowsHost)("runs an explicit native updater outside PATH", () =>
     Effect.gen(function* () {
       const tempDir = yield* makeTempDir("t3-native-update");
@@ -604,8 +598,6 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
     });
     // A plain /usr/local/bin binary is not evidence of Homebrew (#8832).
     expect(homebrewOwnershipFromCommandPath("/usr/local/bin/codex")).toBeNull();
-    // A keg elsewhere reports its prefix so the resolver can reject it against
-    // `brew --prefix`.
     expect(homebrewOwnershipFromCommandPath("/srv/Cellar/claude/1.0.0/bin/claude")).toMatchObject({
       prefix: "/srv",
     });
@@ -659,7 +651,7 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
             env: { PATH: brewBinDir },
           },
         ).pipe(
-          Effect.provideService(HostProcessPlatform, "darwin"),
+          Effect.provideService(HostProcess.Platform, "darwin"),
           Effect.provideService(
             ChildProcessSpawner.ChildProcessSpawner,
             stdoutSpawner((command, args) => {
@@ -725,7 +717,7 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
             env: { PATH: brewBinDir },
           },
         ).pipe(
-          Effect.provideService(HostProcessPlatform, "darwin"),
+          Effect.provideService(HostProcess.Platform, "darwin"),
           Effect.provideService(
             ChildProcessSpawner.ChildProcessSpawner,
             stdoutSpawner(() => "/opt/homebrew\n"),
@@ -786,7 +778,6 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
           lockKey: "packageTool-native",
         });
 
-        // A mise install is pinned in mise's config, so it stays manual.
         const misePath = NodePath.join(tempDir, "mise", "installs", "package-tool", "1.0.0", "bin");
         writeExecutable(NodePath.join(misePath, "package-tool"));
         const mise = yield* resolveProviderMaintenanceCapabilitiesEffect(selfUpdating, {
@@ -864,7 +855,7 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
         binaryPath: kegBinary,
         env: { PATH: "" },
       }).pipe(
-        Effect.provideService(HostProcessPlatform, "darwin"),
+        Effect.provideService(HostProcess.Platform, "darwin"),
         Effect.provideService(
           ChildProcessSpawner.ChildProcessSpawner,
           stdoutSpawner((_command, args) => (args[0] === "--prefix" ? `${tempDir}\n` : "{}")),
@@ -910,12 +901,8 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
         }),
       );
 
-      // An advisory read starts a resolution that is still running when the
-      // user clicks Update; the fresh read must not wait on or reuse it.
       const advisory = yield* Effect.forkChild(resolve(), { startImmediately: true });
       const fresh = yield* Effect.forkChild(resolve({ fresh: true }), { startImmediately: true });
-      // The fresh read runs its own resolution, so it finishes while the stale
-      // one is still waiting.
       expect(resolutions).toBe(2);
       expect(fresh.pollUnsafe()).toBeDefined();
       yield* Deferred.succeed(releaseStale, undefined);
@@ -940,8 +927,6 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
       const first = yield* Effect.forkChild(resolve(), { startImmediately: true });
       yield* Fiber.interrupt(first);
 
-      // The next read resolves again, and a reader that joined it keeps it
-      // running when the reader that started it goes away.
       const owner = yield* Effect.forkChild(resolve(), { startImmediately: true });
       const waiter = yield* Effect.forkChild(resolve(), { startImmediately: true });
       yield* Fiber.interrupt(owner);

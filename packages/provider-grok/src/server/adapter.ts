@@ -4,7 +4,7 @@ import {
   isXAiTaskCompletedWakeNotification,
   xAiRateLimitedErrorCode,
 } from "./xaiAcpExtension.ts";
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveSelfInvocation, type SelfInvocation } from "@t3tools/shared/nodeRuntime";
 import {
   defaultInstanceIdForDriver,
@@ -150,10 +150,8 @@ const registerGrokAcpExtensions: NonNullable<AcpAdapterV2Flavor["registerExtensi
 
 /**
  * Grok intercepts exit_plan_mode and reverse-requests client approval. Capture
- * the plan into T3's proposed-plan card and abandon the native gate so the
- * turn does not hang (#8358; mirrors the Claude ExitPlanMode pattern). Plan
- * content preference: the request payload, then the plan.md contents sniffed
- * from tool calls this turn, then the empty-state placeholder.
+ * the plan into T3's proposed-plan card and abandon the native gate so the turn
+ * does not hang (#8358; mirrors the Claude ExitPlanMode pattern).
  */
 const registerGrokExitPlanModeExtensions = ({
   runtime,
@@ -226,21 +224,20 @@ export function grokLaunchRuntimeMode(
     : "approval-required";
 }
 
-/** The flavor runs Grok's launcher through the adapter's spawner. */
-export function makeGrokAcpAdapterFlavor(options: GrokAdapterV2Options): AcpAdapterV2Flavor {
+export function makeGrokAcpAdapterFlavor(
+  options: GrokAdapterV2Options,
+  homeDirectory: string,
+): AcpAdapterV2Flavor {
   return {
     driver: GROK_PROVIDER,
     runtimeHarness: "Grok",
     capabilities: GrokProviderCapabilitiesV2,
     interruptPromptOnCancel: false,
     // User Stop (requestRuntimeRestart) still hard-kills the process group and
-    // respawns so existing background tasks stop too. Older 0.2.x builds could
-    // detach a cancelled foreground command (E3 harness 2026-07-18); current
-    // source kills foreground work but intentionally preserves already-
-    // backgrounded tasks. Non-Stop interrupts (mid-prompt steering,
-    // restart_active) omit requestRuntimeRestart and stay soft: session/cancel
-    // carries cancelTrigger=ctrl_c, the session survives, and background work
-    // remains available to the replacement turn.
+    // respawns so existing background tasks stop too. Non-Stop interrupts
+    // (mid-prompt steering, restart_active) omit requestRuntimeRestart and stay
+    // soft: session/cancel carries cancelTrigger=ctrl_c, the session survives,
+    // and background work remains available to the replacement turn.
     restartRuntimeAfterInterrupt: true,
     terminateRuntimeProcessGroupOnInterrupt: true,
     // Steering restarts on a settled turn additionally skip session/cancel so
@@ -290,8 +287,6 @@ export function makeGrokAcpAdapterFlavor(options: GrokAdapterV2Options): AcpAdap
         cause,
         ...(isAcpRequestError(cause)
           ? {
-              // Grok's own failure text rides on the cause; makeProviderFailure
-              // redacts and bounds it before it reaches the user.
               message:
                 cause.cause instanceof XAiPromptFailureText
                   ? cause.cause.message
@@ -305,12 +300,11 @@ export function makeGrokAcpAdapterFlavor(options: GrokAdapterV2Options): AcpAdap
     extractSubagentUpdate: extractXAiAcpSubagentUpdate,
     extractSubagentEndNotice: extractXAiAcpSubagentEndNotice,
     normalizeToolCall: normalizeXAiAcpToolCallState,
-    // Show the plan while Grok is still writing it: plan.md writes under the
-    // Grok session dir surface as the proposed-plan card before exit (#8358).
     extractProposedPlanMarkdown: (toolCall) =>
       extractGrokPlanMarkdownFromToolCallData(toolCall.data, {
         platform: options.hostPlatform,
         environment: options.environment,
+        homeDirectory,
       }),
     extractBackgroundTaskId: extractXAiMonitorTaskId,
     extractBackgroundToolMutation: extractXAiAcpBackgroundToolMutation,
@@ -331,7 +325,7 @@ export const makeGrokAdapterV2 = Effect.fn("makeGrokAdapterV2")(function* (
 ) {
   return yield* makeAcpAdapterV2({
     instanceId: options.instanceId,
-    flavor: makeGrokAcpAdapterFlavor(options),
+    flavor: makeGrokAcpAdapterFlavor(options, yield* HostProcess.HomeDirectory),
     selfInvocation: options.selfInvocation,
     ...(options.nativeLogging === undefined ? {} : { nativeLogging: options.nativeLogging }),
     ...(options.continuationRequests === undefined
@@ -357,8 +351,8 @@ export const GrokAdapterV2Driver: ProviderAdapterDriver<GrokSettings, GrokAdapte
   defaultConfig: (): GrokSettings => DEFAULT_GROK_SETTINGS,
   create: Effect.fn("GrokAdapterV2Driver.create")(
     function* (input: ProviderAdapterDriverCreateInput<GrokSettings>) {
-      const hostEnvironment = yield* HostProcessEnvironment;
-      const hostPlatform = yield* HostProcessPlatform;
+      const hostEnvironment = yield* HostProcess.Environment;
+      const hostPlatform = yield* HostProcess.Platform;
       const selfInvocation = yield* resolveSelfInvocation();
       const providerEventLoggers = yield* ProviderEventLoggers.ProviderEventLoggers;
       const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
@@ -366,7 +360,7 @@ export const GrokAdapterV2Driver: ProviderAdapterDriver<GrokSettings, GrokAdapte
       return yield* makeGrokAdapterV2({
         instanceId: input.instanceId,
         settings: { ...input.config, enabled: input.enabled },
-        environment: mergeProviderInstanceEnvironment(input.environment, hostEnvironment),
+        environment: yield* mergeProviderInstanceEnvironment(input.environment, hostEnvironment),
         hostPlatform,
         selfInvocation,
         continuationRequests,
@@ -407,8 +401,8 @@ const layer: Layer.Layer<
 > = Layer.effect(
   ProviderAdapter.ProviderAdapterV2,
   Effect.gen(function* () {
-    const hostEnvironment = yield* HostProcessEnvironment;
-    const hostPlatform = yield* HostProcessPlatform;
+    const hostEnvironment = yield* HostProcess.Environment;
+    const hostPlatform = yield* HostProcess.Platform;
     const selfInvocation = yield* resolveSelfInvocation();
     const providerEventLoggers = yield* ProviderEventLoggers.ProviderEventLoggers;
     const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;

@@ -1,4 +1,4 @@
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
 import {
   EventId,
@@ -259,7 +259,7 @@ export const KiroAdapterV2Driver: ProviderAdapterDriver<KiroSettings, KiroAdapte
   defaultConfig: (): KiroSettings => DEFAULT_KIRO_SETTINGS,
   create: Effect.fn("KiroAdapterV2Driver.create")(
     function* (input: ProviderAdapterDriverCreateInput<KiroSettings>) {
-      const hostEnvironment = yield* HostProcessEnvironment;
+      const hostEnvironment = yield* HostProcess.Environment;
       const selfInvocation = yield* resolveSelfInvocation();
       const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const providerEventLoggers = yield* ProviderEventLoggers.ProviderEventLoggers;
@@ -268,7 +268,7 @@ export const KiroAdapterV2Driver: ProviderAdapterDriver<KiroSettings, KiroAdapte
       return yield* makeKiroAdapterV2({
         instanceId: input.instanceId,
         settings: { ...input.config, enabled: input.enabled },
-        environment: mergeProviderInstanceEnvironment(input.environment, hostEnvironment),
+        environment: yield* mergeProviderInstanceEnvironment(input.environment, hostEnvironment),
         childProcessSpawner,
         selfInvocation,
         continuationRequests,

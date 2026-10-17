@@ -1,7 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import { ProviderDriverKind } from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveSpawnCommand, SpawnExecutableResolution } from "@t3tools/shared/shell";
 import * as Effect from "effect/Effect";
 import { describe, expect } from "vite-plus/test";
@@ -58,7 +58,7 @@ describe("KiroAcpSupport", () => {
       });
     }).pipe(
       Effect.provide(NodeServices.layer),
-      Effect.provideService(HostProcessPlatform, "win32"),
+      Effect.provideService(HostProcess.Platform, "win32"),
       Effect.provideService(
         SpawnExecutableResolution,
         () => "C:\\Program Files\\Kiro-Cli\\kiro-cli.exe",

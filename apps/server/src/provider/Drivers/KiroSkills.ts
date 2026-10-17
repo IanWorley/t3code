@@ -1,7 +1,7 @@
 import * as NodeOS from "node:os";
 
 import type { ServerProviderSkill } from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -42,7 +42,7 @@ export const discoverKiroSkills = Effect.fn("discoverKiroSkills")(function* (
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const platform = yield* HostProcessPlatform;
+  const platform = yield* HostProcess.Platform;
   const userHome =
     (platform === "win32" ? environment.USERPROFILE : environment.HOME) || NodeOS.homedir();
   const roots = [

@@ -98,7 +98,6 @@ describe("deriveProviderModelsForDisplay", () => {
       ],
     });
 
-    // A bare entry keeps the driver default the server filled in.
     expect(display[0]).toEqual({
       slug: "bare",
       name: "bare",
@@ -143,6 +142,7 @@ describe("deriveProviderModelsForDisplay", () => {
         modelOrder: [],
         onHiddenModelsChange: () => undefined,
         onFavoriteModelsChange: () => undefined,
+        onToggleFavorite: () => undefined,
         onModelOrderChange: () => undefined,
       }),
     );
@@ -183,6 +183,7 @@ describe("deriveProviderModelsForDisplay", () => {
       modelOrder: [],
       onHiddenModelsChange: () => undefined,
       onFavoriteModelsChange: () => undefined,
+      onToggleFavorite: () => undefined,
       onModelOrderChange: () => undefined,
     } as const;
 

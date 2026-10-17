@@ -11,6 +11,7 @@ import { extractJsonObject } from "@t3tools/shared/schemaJson";
 
 import { TextGenerationError } from "@t3tools/contracts";
 import * as TextGeneration from "./TextGeneration.ts";
+import { investigationUnsupported } from "@t3tools/provider-core/server/textGenerationOperations";
 import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
@@ -258,10 +259,15 @@ export const makeKiroTextGeneration = Effect.fn("makeKiroTextGeneration")(functi
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
+  // Review guides investigate the checkout, and Kiro cannot guarantee read-only tools.
+  const generateReviewGuide: TextGeneration.TextGeneration["Service"]["generateReviewGuide"] = () =>
+    Effect.fail(investigationUnsupported("generateReviewGuide", "Kiro"));
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateReviewGuide,
   } satisfies TextGeneration.TextGeneration["Service"];
 });
