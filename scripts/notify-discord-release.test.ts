@@ -8,12 +8,10 @@ import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
-import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 import { Command } from "effect/cli";
 import { HttpClient, HttpClientError, HttpClientResponse, UrlParams } from "effect/http";
-import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import {
   buildDiscordReleaseAnnouncement,
