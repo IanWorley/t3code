@@ -31,7 +31,6 @@ const providerSecretFields = new Map([
   ),
 ]);
 const usageLimitSecretFields = secretSettingsFields(UsageLimitSourceConfig);
-const VIBEPROXY_API_KEY_SECRET_NAME = "vibeproxy-client-api-key";
 const encode = (value: string) => Buffer.from(value, "utf8").toString("base64url");
 
 export interface SettingsSecret {
@@ -143,22 +142,5 @@ export function mapSettingsSecrets(
     ]),
   ) as ServerSettings["usageLimitSources"];
 
-  // The VibeProxy key shares the provider environment variable shape, where
-  // `valueRedacted` marks a value held in the secret store.
-  const vibeProxyApiKey = map({
-    secretName: VIBEPROXY_API_KEY_SECRET_NAME,
-    kind: "environment",
-    value: settings.vibeProxy.apiKey.value,
-    redacted: settings.vibeProxy.apiKey.valueRedacted === true,
-    sensitive: true,
-  });
-  const vibeProxy = {
-    ...settings.vibeProxy,
-    apiKey: {
-      value: vibeProxyApiKey.value,
-      ...(vibeProxyApiKey.redacted ? { valueRedacted: true } : {}),
-    },
-  };
-
-  return { ...settings, providerInstances, sourceControlHosts, usageLimitSources, vibeProxy };
+  return { ...settings, providerInstances, sourceControlHosts, usageLimitSources };
 }

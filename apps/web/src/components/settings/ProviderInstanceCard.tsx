@@ -21,7 +21,6 @@ import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "
 import {
   isProviderDriverKind,
   resolveProviderInstanceEnabled,
-  VIBEPROXY_CLIENT_API_KEY_ENV,
   type ProviderInstanceConfig,
   type ProviderInstanceEnvironmentVariable,
   type ProviderInstanceId,
@@ -42,7 +41,6 @@ import { cn } from "../../lib/utils";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { normalizeProviderAccentColor } from "../../providerInstances";
-import { isVibeProxySupportedDriver } from "../../vibeProxyPresentation";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
@@ -160,7 +158,6 @@ function nextConfigBlobWithValue(
 export function deriveProviderModelsForDisplay(input: {
   readonly liveModels: ReadonlyArray<ServerProviderModel> | undefined;
   readonly customModels: ReadonlyArray<CustomModelDefinition>;
-  readonly proxyModels?: ReadonlyArray<string>;
 }): ReadonlyArray<ServerProviderModel> {
   const liveCustomModelsBySlug = new Map(
     Arr.filterMap(input.liveModels ?? [], (model) =>
@@ -182,18 +179,6 @@ export function deriveProviderModelsForDisplay(input: {
           },
         ],
   );
-  const configuredSlugs = new Set(input.customModels.map((entry) => entry.slug));
-  for (const slug of new Set(input.proxyModels ?? [])) {
-    if (configuredSlugs.has(slug) || serverSlugs.has(slug)) continue;
-    customModels.push(
-      liveCustomModelsBySlug.get(slug) ?? {
-        slug,
-        name: slug,
-        isCustom: true,
-        capabilities: null,
-      },
-    );
-  }
   return [...serverModels, ...customModels];
 }
 
@@ -727,11 +712,6 @@ export function ProviderInstanceCard({
   const driverKind: ProviderDriverKind | null = isProviderDriverKind(instance.driver)
     ? instance.driver
     : null;
-  const supportsVibeProxy =
-    driverKind !== null &&
-    isVibeProxySupportedDriver(driverKind) &&
-    (driverKind !== "codex" || readCodexSetupMode(instance.config) !== "managed");
-  const vibeProxyEnabled = instance.vibeProxy?.enabled ?? false;
   // Keyed on the stored list, not the whole instance, so writing another field
   // leaves the models list (often ~50 rows) with the same props.
   const storedCustomModels =
@@ -745,9 +725,6 @@ export function ProviderInstanceCard({
   const modelsForDisplay = deriveProviderModelsForDisplay({
     liveModels: liveProvider?.models,
     customModels,
-    ...(liveProvider?.vibeProxy?.addedModels
-      ? { proxyModels: liveProvider.vibeProxy.addedModels }
-      : {}),
   });
   const updateDisplayName = (value: string) => {
     const trimmed = value.trim();
@@ -806,10 +783,7 @@ export function ProviderInstanceCard({
     );
   };
   const environmentFields = driverOption?.environmentFields ?? [];
-  const environmentFieldNames = new Set([
-    VIBEPROXY_CLIENT_API_KEY_ENV,
-    ...environmentFields.map((field) => field.name),
-  ]);
+  const environmentFieldNames = new Set(environmentFields.map((field) => field.name));
   const genericEnvironment = providerEnvironmentWithoutNames(
     instance.environment,
     environmentFieldNames,
@@ -1091,15 +1065,6 @@ export function ProviderInstanceCard({
       {driverOption?.badgeLabel ? (
         <Badge variant="warning" size="sm" className="shrink-0">
           {driverOption.badgeLabel}
-        </Badge>
-      ) : null}
-      {supportsVibeProxy && vibeProxyEnabled ? (
-        <Badge
-          variant={liveProvider?.vibeProxy?.reachable ? "default" : "warning"}
-          size="sm"
-          className="shrink-0"
-        >
-          via VibeProxy
         </Badge>
       ) : null}
       {versionCodeNode}

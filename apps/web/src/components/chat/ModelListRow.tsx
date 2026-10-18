@@ -40,8 +40,6 @@ export const ModelListRow = memo(function ModelListRow(props: {
   unavailable?: boolean;
   jumpLabel?: string | null;
   disabledReason?: string | null;
-  advisoryReason?: string | null;
-  sourceBadgeLabel?: string | null;
   onToggleFavorite: (instanceId: ProviderInstanceId, slug: string) => void;
 }) {
   const model = {
@@ -58,7 +56,6 @@ export const ModelListRow = memo(function ModelListRow(props: {
       index={props.index}
       value={modelPickerModelKey(props.instanceId, props.slug)}
       disabled={Boolean(props.disabledReason)}
-      muted={Boolean(props.advisoryReason && !props.disabledReason)}
       className={cn(
         "group relative w-full !min-w-0 max-w-full cursor-pointer",
         props.disabledReason &&
@@ -82,11 +79,6 @@ export const ModelListRow = memo(function ModelListRow(props: {
             >
               New
             </span>
-          ) : null}
-          {props.sourceBadgeLabel ? (
-            <Badge variant="info" size="sm" aria-label={`Model source: ${props.sourceBadgeLabel}`}>
-              {props.sourceBadgeLabel}
-            </Badge>
           ) : null}
           {props.unavailable ? (
             <Badge variant="outline" size="sm">
@@ -150,8 +142,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
     </ComboboxItem>
   );
 
-  const tooltipReason = props.disabledReason ?? props.advisoryReason;
-  if (!tooltipReason) {
+  if (!props.disabledReason) {
     return row;
   }
 
@@ -159,7 +150,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
     <Tooltip>
       <TooltipTrigger render={row} />
       <TooltipPopup side="left" align="center">
-        {tooltipReason}
+        {props.disabledReason}
       </TooltipPopup>
     </Tooltip>
   );

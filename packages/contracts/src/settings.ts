@@ -865,20 +865,6 @@ export const BackgroundActivitySettings = Schema.Struct({
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
-export const DEFAULT_VIBEPROXY_URL = "http://localhost:8317";
-
-export const VibeProxyApiKeySetting = Schema.Struct({
-  value: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  valueRedacted: Schema.optionalKey(Schema.Boolean),
-}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
-export type VibeProxyApiKeySetting = typeof VibeProxyApiKeySetting.Type;
-
-export const VibeProxySettings = Schema.Struct({
-  url: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_VIBEPROXY_URL))),
-  apiKey: VibeProxyApiKeySetting,
-}).pipe(Schema.withDecodingDefault(Effect.succeed({})));
-export type VibeProxySettings = typeof VibeProxySettings.Type;
-
 export const ResponseStreamingMode = Schema.Literals(["turn", "paragraph"]);
 export type ResponseStreamingMode = typeof ResponseStreamingMode.Type;
 
@@ -1196,7 +1182,6 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   addProjectBaseDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  vibeProxy: VibeProxySettings,
   textGenerationModelSelection: ModelSelection.pipe(
     Schema.withDecodingDefault(
       Effect.succeed({
@@ -1472,17 +1457,6 @@ export const ServerSettingsPatch = Schema.Struct({
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
   worktreeSubmodules: Schema.optionalKey(Schema.NullOr(WorktreeSubmodules)),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
-  vibeProxy: Schema.optionalKey(
-    Schema.Struct({
-      url: Schema.optionalKey(TrimmedString),
-      apiKey: Schema.optionalKey(
-        Schema.Struct({
-          value: Schema.optionalKey(Schema.String),
-          valueRedacted: Schema.optionalKey(Schema.Boolean),
-        }),
-      ),
-    }),
-  ),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   branchNamingMode: Schema.optionalKey(BranchNamingMode),
   branchNamePrefix: Schema.optionalKey(TrimmedString),

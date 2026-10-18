@@ -1,6 +1,5 @@
 import {
   defaultInstanceIdForDriver,
-  ProviderDriverKind,
   providerInstanceConfigEnabledFlag,
   resolveProviderInstanceEnabled,
   type ProviderInstanceConfig,
@@ -9,9 +8,7 @@ import {
   ServerSettings,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as Equal from "effect/Equal";
 import * as Layer from "effect/Layer";
-import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 
 import * as Settings from "../serverSettings.ts";
@@ -36,22 +33,10 @@ type ProviderInstanceRegistryHydrationEnv =
   | BackgroundPolicy.BackgroundPolicy
   | ServerConfig.ServerConfig;
 
-const VIBEPROXY_DRIVER_KINDS = new Set([
-  ProviderDriverKind.make("codex"),
-  ProviderDriverKind.make("claudeAgent"),
-]);
-
-/**
- * Explicit `providerInstances` entries plus an implicit default instance for
- * each built-in driver whose default slot is empty. Pure so the hydration
- * rule can be tested without layers.
- */
 export const deriveProviderInstanceConfigMap = (
   settings: ServerSettings,
 ): ProviderInstanceConfigMap => {
-  const merged: Record<string, ProviderInstanceConfig> = {
-    ...settings.providerInstances,
-  };
+  const merged: Record<string, ProviderInstanceConfig> = { ...settings.providerInstances };
 
   for (const driver of BUILT_IN_DRIVERS) {
     if (driver.metadata.hasDefaultInstance === false) continue;
@@ -89,25 +74,15 @@ const layerSettingsWatcher = Layer.effectDiscard(
     const mutator = yield* ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator;
     const serverSettings = yield* Settings.ServerSettingsService;
     const settingsChanges = yield* serverSettings.subscribeChanges;
-    const initialSettings = yield* serverSettings.getSettings.pipe(
-      Effect.orElseSucceed(() => undefined),
-    );
-    const previousVibeProxy = yield* Ref.make(initialSettings?.vibeProxy);
     yield* settingsChanges.pipe(
       Stream.runForEach((next) =>
-        Ref.getAndSet(previousVibeProxy, next.vibeProxy).pipe(
-          Effect.flatMap((previous) =>
-            mutator.reconcile(
-              deriveProviderInstanceConfigMap(next),
-              previous !== undefined && !Equal.equals(previous, next.vibeProxy)
-                ? { forceRebuildDrivers: VIBEPROXY_DRIVER_KINDS }
-                : undefined,
+        mutator
+          .reconcile(deriveProviderInstanceConfigMap(next))
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
             ),
           ),
-          Effect.catchCause((cause) =>
-            Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
-          ),
-        ),
       ),
       Effect.forkScoped,
     );

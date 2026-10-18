@@ -96,73 +96,6 @@ const noSpawn = ChildProcessSpawner.make(() =>
 const encodeCredentials = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 it.layer(layerTest)("CodexDriver", (it) => {
-  it.effect("routes VibeProxy settings and credentials through the orchestration adapter", () =>
-    Effect.gen(function* () {
-      const settings = yield* ServerSettings.ServerSettingsService;
-      yield* settings.updateSettings({
-        vibeProxy: { url: "http://127.0.0.1:8318", apiKey: { value: "proxy-session-key" } },
-      });
-      const fs = yield* FileSystem.FileSystem;
-      const homePath = yield* fs.makeTempDirectoryScoped({ prefix: "t3-proxy-session-" });
-      const launches: Array<
-        Parameters<CodexAdapterV2.CodexAppServerClientFactoryShape["open"]>[0]
-      > = [];
-      const instanceId = ProviderInstanceId.make("codex-proxy-session");
-      const instance = yield* CodexDriver.create({
-        instanceId,
-        displayName: "Proxy Codex",
-        enabled: false,
-        environment: [],
-        vibeProxy: { enabled: true },
-        config: { ...CodexDriver.defaultConfig(), homePath },
-      }).pipe(
-        Effect.provideService(
-          CodexAdapterV2.CodexAppServerClientFactory,
-          CodexAdapterV2.CodexAppServerClientFactory.of({
-            open: (launch) =>
-              Effect.sync(() => launches.push(launch)).pipe(Effect.andThen(Effect.interrupt)),
-          }),
-        ),
-      );
-      yield* instance.orchestrationAdapter
-        .openSession({
-          threadId: ThreadId.make("proxy-session-thread"),
-          providerSessionId: ProviderSessionId.make("proxy-session"),
-          modelSelection: { instanceId, model: "gpt-6.1-sol" },
-          runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-            runtimeMode: "full-access",
-            interactionMode: "default",
-            cwd: homePath,
-          }),
-        })
-        .pipe(Effect.scoped, Effect.exit);
-      expect(launches).toHaveLength(1);
-      expect(launches[0]!.settings.launchArgs).toContain(
-        'model_providers.t3_vibeproxy.base_url="http://127.0.0.1:8318/v1"',
-      );
-      expect(launches[0]!.environment.T3CODE_VIBEPROXY_API_KEY).toBe("proxy-session-key");
-    }).pipe(Effect.scoped),
-  );
-
-  it.effect("rejects VibeProxy routing for managed Codex accounts", () =>
-    Effect.gen(function* () {
-      const result = yield* CodexDriver.create({
-        instanceId: ProviderInstanceId.make("managed-proxy"),
-        displayName: "Managed proxy",
-        enabled: true,
-        environment: [],
-        vibeProxy: { enabled: true },
-        config: { ...CodexDriver.defaultConfig(), setupMode: "managed" },
-      }).pipe(Effect.result);
-      expect(result._tag).toBe("Failure");
-      if (result._tag === "Failure") {
-        expect(result.failure.detail).toBe(
-          "VibeProxy requires an existing Codex CLI installation. Switch setup mode before enabling proxy routing.",
-        );
-      }
-    }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn)),
-  );
-
   it.effect("disconnect refreshes a restored managed account while its auth flow is idle", () =>
     Effect.gen(function* () {
       const instanceId = ProviderInstanceId.make("restored-managed-account");
@@ -337,36 +270,6 @@ it.layer(layerTest)("CodexDriver", (it) => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect.skipIf(windowsHost)(
-    "does not pass the global proxy key to a direct Codex process",
-    () =>
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        const settings = yield* ServerSettings.ServerSettingsService;
-        yield* settings.updateSettings({ vibeProxy: { apiKey: { value: "proxy-only-secret" } } });
-        const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-codex-direct-" });
-        const binaryPath = NodePath.join(tempDir, "codex");
-        const capturedKeyPath = NodePath.join(tempDir, "captured-key");
-        yield* fs.writeFileString(
-          binaryPath,
-          `#!/bin/sh
-printf '%s' "$T3CODE_VIBEPROXY_API_KEY" > '${capturedKeyPath}'
-printf 'codex-cli 0.156.0\n'
-`,
-        );
-        yield* fs.chmod(binaryPath, 0o755);
-        const instance = yield* CodexDriver.create({
-          instanceId: ProviderInstanceId.make("codex-direct"),
-          displayName: "Direct Codex",
-          enabled: true,
-          vibeProxy: { enabled: false },
-          environment: [],
-          config: { ...CodexDriver.defaultConfig(), binaryPath, homePath: tempDir },
-        });
-        yield* instance.snapshot.refresh;
-        expect(yield* fs.readFileString(capturedKeyPath)).toBe("");
-      }).pipe(Effect.scoped),
-  );
   it.effect.skipIf(windowsHost)(
     "runs the standalone updater against the shared home, not the shadow home",
     () =>

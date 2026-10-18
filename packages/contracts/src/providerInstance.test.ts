@@ -107,14 +107,6 @@ describe("ProviderInstanceConfig", () => {
     expect(decoded.config).toEqual(opaqueConfig);
   });
 
-  it("decodes an explicit VibeProxy routing opt-in", () => {
-    const decoded = decodeProviderInstanceConfig({
-      driver: "codex",
-      vibeProxy: { enabled: true, offerModels: false },
-    });
-    expect(decoded.vibeProxy).toEqual({ enabled: true });
-  });
-
   it("trims provider instance envelope fields", () => {
     const decoded = decodeProviderInstanceConfig({
       driver: "  codex  ",

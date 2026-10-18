@@ -369,50 +369,6 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(layerSettings));
   });
 
-  it.effect("does not label the global VibeProxy API key as an environment variable", () => {
-    const platformCause = PlatformError.systemError({
-      _tag: "PermissionDenied",
-      module: "FileSystem",
-      method: "readFile",
-      pathOrDescriptor: "VibeProxy API key",
-      description: "Secret backend unavailable.",
-    });
-    const cause = new ServerSecretStore.SecretStoreReadError({
-      resource: "VibeProxy API key",
-      cause: platformCause,
-    });
-    const configLayer = Layer.fresh(
-      ServerConfig.layerTest(process.cwd(), {
-        prefix: "t3code-server-settings-vibeproxy-secret-failure-test-",
-      }),
-    );
-    const settingsLayer = ServerSettingsModule.layer.pipe(
-      Layer.provide(layerFailingSecretStore(cause)),
-      Layer.provideMerge(Layer.fresh(SqlitePersistence.layerMemory)),
-      Layer.provideMerge(configLayer),
-    );
-
-    return Effect.gen(function* () {
-      const serverConfig = yield* ServerConfig.ServerConfig;
-      const fileSystem = yield* FileSystem.FileSystem;
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      yield* fileSystem.writeFileString(
-        serverConfig.settingsPath,
-        '{"vibeProxy":{"apiKey":{"valueRedacted":true}}}',
-      );
-
-      const error = yield* Effect.flip(serverSettings.getSettings);
-
-      assert.deepInclude(error, {
-        _tag: "ServerSettingsError",
-        operation: "read-secret",
-      });
-      assert.isUndefined(error.environmentVariable);
-      assert.notInclude(error.message, "environment variable");
-      assert.strictEqual(error.cause, cause);
-    }).pipe(Effect.provide(settingsLayer));
-  });
-
   it.effect("identifies provider history query failures", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;
@@ -1774,39 +1730,6 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
-  it.effect("stores the global VibeProxy API key outside settings.json", () =>
-    Effect.gen(function* () {
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      const serverConfig = yield* ServerConfig.ServerConfig;
-      const fileSystem = yield* FileSystem.FileSystem;
-
-      const next = yield* serverSettings.updateSettings({
-        vibeProxy: {
-          url: "https://proxy.example.test",
-          apiKey: { value: "vp-secret", valueRedacted: false },
-        },
-      });
-
-      assert.deepEqual(next.vibeProxy, {
-        url: "https://proxy.example.test",
-        apiKey: { value: "vp-secret", valueRedacted: true },
-      });
-
-      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
-      assert.notInclude(raw, "vp-secret");
-      assert.deepEqual(JSON.parse(raw).vibeProxy, {
-        url: "https://proxy.example.test",
-        apiKey: { valueRedacted: true },
-      });
-
-      const redacted = ServerSettingsModule.redactServerSettingsForClient(next);
-      assert.deepEqual(redacted.vibeProxy.apiKey, {
-        value: "",
-        valueRedacted: true,
-      });
-    }).pipe(Effect.provide(layerServerSettings())),
-  );
-
   it.effect(
     "keeps source control host secrets in the secret store and tells clients only that one is set",
     () =>
@@ -2023,36 +1946,29 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       yield* Effect.gen(function* () {
         const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
         settingsPathToFail = (yield* ServerConfig.ServerConfig).settingsPath;
-        yield* serverSettings.updateProviderInstance(
-          {
+        yield* serverSettings.updateProviderInstance({
+          operation: "upsert",
+          instanceId,
+          instance: {
+            driver: ProviderDriverKind.make("antigravity"),
+            environment: [{ name: "OPENROUTER_API_KEY", value: "sk-kept", sensitive: true }],
+            config: { apiKey: "config-kept" },
+          },
+        });
+
+        failRename = true;
+        const failedUpdate = yield* serverSettings
+          .updateProviderInstance({
             operation: "upsert",
             instanceId,
             instance: {
               driver: ProviderDriverKind.make("antigravity"),
-              environment: [{ name: "OPENROUTER_API_KEY", value: "sk-kept", sensitive: true }],
-              config: { apiKey: "config-kept" },
+              environment: [{ name: "OPENROUTER_API_KEY", value: "sk-new", sensitive: true }],
+              config: { apiKey: "config-new" },
             },
-          },
-          { vibeProxy: { apiKey: { value: "proxy-kept" } } },
-        );
-
-        failRename = true;
-        const failedUpdate = yield* serverSettings
-          .updateProviderInstance(
-            {
-              operation: "upsert",
-              instanceId,
-              instance: {
-                driver: ProviderDriverKind.make("antigravity"),
-                environment: [{ name: "OPENROUTER_API_KEY", value: "sk-new", sensitive: true }],
-                config: { apiKey: "config-new" },
-              },
-            },
-            { vibeProxy: { apiKey: { value: "proxy-new" } } },
-          )
+          })
           .pipe(Effect.result);
         assert.equal(failedUpdate._tag, "Failure");
-        assert.equal((yield* serverSettings.getSettings).vibeProxy.apiKey.value, "proxy-kept");
         assert.equal(
           (yield* serverSettings.getSettings).providerInstances[instanceId]?.environment?.[0]
             ?.value,
@@ -2065,13 +1981,9 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         );
 
         const failed = yield* serverSettings
-          .updateProviderInstance(
-            { operation: "remove", instanceId },
-            { vibeProxy: { apiKey: { value: "" } } },
-          )
+          .updateProviderInstance({ operation: "remove", instanceId })
           .pipe(Effect.result);
         assert.equal(failed._tag, "Failure");
-        assert.equal((yield* serverSettings.getSettings).vibeProxy.apiKey.value, "proxy-kept");
         assert.equal(
           (yield* serverSettings.getSettings).providerInstances[instanceId]?.environment?.[0]
             ?.value,

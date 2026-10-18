@@ -213,16 +213,6 @@ export const ServerProviderUpdateState = Schema.Struct({
 });
 export type ServerProviderUpdateState = typeof ServerProviderUpdateState.Type;
 
-export const ServerProviderVibeProxyStatus = Schema.Struct({
-  enabled: Schema.Boolean,
-  endpoint: TrimmedNonEmptyString,
-  reachable: Schema.Boolean,
-  models: Schema.Array(TrimmedNonEmptyString),
-  addedModels: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
-  message: Schema.optional(TrimmedNonEmptyString),
-});
-export type ServerProviderVibeProxyStatus = typeof ServerProviderVibeProxyStatus.Type;
-
 export const ServerProvider = Schema.Struct({
   // Routing key for the configured instance this snapshot represents. This
   // is the only stable identity consumers may use for provider routing.
@@ -284,7 +274,6 @@ export const ServerProvider = Schema.Struct({
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   compatibilityAdvisory: Schema.optionalKey(ServerProviderCompatibilityAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
-  vibeProxy: Schema.optionalKey(ServerProviderVibeProxyStatus),
 });
 export type ServerProvider = typeof ServerProvider.Type;
 

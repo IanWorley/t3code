@@ -223,40 +223,6 @@ describe("mobile model options", () => {
     expect(explicitOption?.selection.options).toEqual([{ id: "serviceTier", value: "priority" }]);
   });
 
-  it("labels routed providers with their VibeProxy status", () => {
-    const config = {
-      providers: [
-        {
-          instanceId: "claudeAgent",
-          driver: "claudeAgent",
-          displayName: "Claude",
-          enabled: true,
-          installed: true,
-          auth: { status: "authenticated" },
-          vibeProxy: {
-            enabled: true,
-            endpoint: "http://127.0.0.1:8318",
-            reachable: false,
-            models: [],
-          },
-          models: [
-            {
-              slug: "claude-proxy",
-              name: "Claude Proxy",
-              isCustom: true,
-              capabilities: null,
-            },
-          ],
-        },
-      ],
-    } as unknown as ServerConfig;
-
-    expect(buildModelOptions(config, null, undefined, null)[0]).toMatchObject({
-      providerLabel: "Claude · VibeProxy unavailable",
-      subtitle: "",
-    });
-  });
-
   it("limits existing threads to their provider while new tasks keep every provider", () => {
     const providers = ["codex", "claudeAgent"].map((instanceId) => ({
       instanceId,
