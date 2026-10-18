@@ -30,6 +30,7 @@ import {
   type ProviderDriverKind,
   type ServerProvider,
   type ServerProviderModel,
+  type ServerProviderModelProxyStatus,
 } from "@t3tools/contracts";
 
 import {
@@ -614,6 +615,16 @@ const NO_CUSTOM_MODELS: ReadonlyArray<CustomModelDefinition> = [];
  *     that project's override, leaving the environment's `instance.enabled`
  *     untouched.
  */
+function describeModelProxyRouting(
+  useModelProxy: boolean,
+  status: ServerProviderModelProxyStatus["status"] | undefined,
+): string {
+  if (!useModelProxy) return "Send this provider's requests through the model proxy below.";
+  if (status === "available") return "Requests go through the model proxy.";
+  if (status === "unavailable") return "The model proxy is unavailable, so requests will fail.";
+  return "Checking the model proxy…";
+}
+
 export function ProviderInstanceCard({
   instanceId,
   instance,
@@ -772,6 +783,17 @@ export function ProviderInstanceCard({
     const { config: _omit, ...rest } = instance;
     onUpdate({ ...rest, config: nextConfig } as ProviderInstanceConfig);
   });
+
+  const useModelProxy = instance.useModelProxy === true;
+  // Managed Codex can't use the proxy, but an instance switched to managed keeps its way out.
+  const canUseModelProxy =
+    instance.driver === "claudeAgent" ||
+    (instance.driver === "codex" &&
+      (readCodexSetupMode(instance.config) !== "managed" || useModelProxy));
+  const updateUseModelProxy = (value: boolean) => {
+    const { useModelProxy: _omit, ...rest } = instance;
+    onUpdate(value ? { ...rest, useModelProxy: true } : rest);
+  };
 
   const updateEnvironment = (environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>) => {
     const cleaned = environment.filter((variable) => variable.name.trim().length > 0);
@@ -1239,6 +1261,19 @@ export function ProviderInstanceCard({
         aria-disabled={readOnly || undefined}
         className={readOnly ? "opacity-50 select-none" : undefined}
       >
+        {canUseModelProxy ? (
+          <SettingsRow
+            title="Model proxy"
+            description={describeModelProxyRouting(useModelProxy, liveProvider?.modelProxy?.status)}
+            control={
+              <Switch
+                checked={useModelProxy}
+                onCheckedChange={(checked) => updateUseModelProxy(Boolean(checked))}
+                aria-label={`Route ${displayName} through the model proxy`}
+              />
+            }
+          />
+        ) : null}
         <ProviderEnvironmentSection
           environment={genericEnvironment}
           onChange={updateGenericEnvironment}

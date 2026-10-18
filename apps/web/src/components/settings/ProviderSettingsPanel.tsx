@@ -98,6 +98,7 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
 import { ExpandableText } from "./ExpandableText";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
+import { ModelProxySettingsSection } from "./ModelProxySettingsSection";
 import { UsageProviderSettings } from "./UsageProviderSettings";
 import { ProviderSetupSection, readAntigravityAuthMethod } from "./ProviderSetupSection";
 import { ProviderAuthenticationSection } from "./ProviderAuthenticationSection";
@@ -1094,6 +1095,12 @@ export function EnvironmentProviderSettings({
           </div>
         </SettingsGroup>
       </SettingsSection>
+
+      <ModelProxySettingsSection
+        environmentId={environmentId}
+        modelProxy={settings.modelProxy}
+        readOnly={readOnly}
+      />
 
       <UsageProviderSettings
         key={environmentId}

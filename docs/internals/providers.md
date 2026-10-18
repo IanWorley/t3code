@@ -159,3 +159,18 @@ The logger filters those notifications before traversal when an older provider s
 
 Model classification has its own [manifest constraints](./model-manifest.md). Assistant-reference
 handling is documented under [citations](./assistant-citations.md).
+
+## Model proxy routing
+
+Codex and Claude instances opt into the environment's model proxy with `useModelProxy`. Registry
+hydration copies `settings.modelProxy` into each opted-in entry
+([`ProviderInstanceRegistryHydration.ts`](../../apps/server/src/provider/ProviderInstanceRegistryHydration.ts)),
+so a URL or key change makes exactly those entries unequal and the normal reconcile rebuilds them.
+Keep the proxy on the entry; reading global settings inside a driver would leave live instances on
+the old endpoint.
+
+Routing only changes the process environment the driver hands to every spawn site
+([`modelProxy.ts`](../../apps/server/src/provider/modelProxy.ts)). Codex picks up its proxy
+provider through the `T3CODE_CODEX_LAUNCH_ARGS` override, which wins over configured launch args
+everywhere. Neither driver edits harness config files, and an invalid URL fails the instance rather
+than sending traffic upstream.

@@ -1,7 +1,7 @@
 import { Toolbar } from "@base-ui/react/toolbar";
 import { type ProviderInstanceId } from "@t3tools/contracts";
 import { memo, useLayoutEffect, useRef, useState } from "react";
-import { SparklesIcon, StarIcon } from "lucide-react";
+import { RouteIcon, SparklesIcon, StarIcon } from "lucide-react";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
@@ -30,6 +30,8 @@ const SELECTED_INDICATOR_CLASS =
 const BADGE_BASE_CLASS =
   "pointer-events-none absolute -right-0.5 top-0.5 z-10 flex size-3.5 items-center justify-center rounded-full bg-transparent shadow-sm ";
 const NEW_BADGE_CLASS = `${BADGE_BASE_CLASS} text-update-foreground `;
+const MODEL_PROXY_BADGE_CLASS =
+  "pointer-events-none absolute -right-0.5 bottom-0.5 z-10 flex size-3.5 items-center justify-center";
 
 const PICKER_TOOLTIP_SIDE = "left" as const;
 const PICKER_TOOLTIP_SIDE_OFFSET = 8;
@@ -142,6 +144,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const isHovered = hoveredInstanceId === entry.instanceId;
             const showNewBadge = props.newBadgeInstanceIds?.has(entry.instanceId) ?? false;
             const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
+            const modelProxyStatus = entry.snapshot.modelProxy?.status;
 
             const tooltip = isUnavailable
               ? describeUnavailableInstance(entry)
@@ -149,7 +152,9 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                 ? (props.getDisabledInstanceTooltip?.(entry) ?? entry.displayName)
                 : showNewBadge
                   ? `${entry.displayName} — New`
-                  : entry.displayName;
+                  : modelProxyStatus !== undefined
+                    ? `${entry.displayName} — via model proxy`
+                    : entry.displayName;
 
             const button = (
               <Toolbar.Button
@@ -200,6 +205,19 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                 {showNewBadge ? (
                   <span className={NEW_BADGE_CLASS} aria-hidden>
                     <SparklesIcon className="size-2" />
+                  </span>
+                ) : null}
+                {modelProxyStatus !== undefined ? (
+                  <span
+                    className={cn(
+                      MODEL_PROXY_BADGE_CLASS,
+                      modelProxyStatus === "unavailable"
+                        ? "text-warning-foreground"
+                        : "text-muted-foreground",
+                    )}
+                    aria-hidden
+                  >
+                    <RouteIcon className="size-2.5" />
                   </span>
                 ) : null}
               </Toolbar.Button>
