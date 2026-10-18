@@ -214,7 +214,7 @@ export function applyModelProxyProbe(
   snapshot: ServerProvider,
   probe: ModelProxyProbe,
 ): ServerProvider {
-  const known = new Set(snapshot.models.map((model) => model.slug));
+  const known = new Set(snapshot.models.flatMap((model) => [model.slug, ...(model.aliases ?? [])]));
   const proxyModels = probe.models
     .filter((slug) => !known.has(slug) && offersProxyModel(snapshot.driver, slug))
     .map((slug): ServerProviderModel => ({

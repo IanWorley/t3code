@@ -109,6 +109,24 @@ describe("applyModelProxyProbe", () => {
     ).toEqual(["claude-sonnet-5", "gpt-6.1-sol"]);
   });
 
+  it("treats a catalog alias as a model the harness already has", () => {
+    const snapshot = {
+      ...readySnapshot,
+      driver: ProviderDriverKind.make("claudeAgent"),
+      models: [
+        {
+          slug: "claude-sonnet-5",
+          name: "Claude Sonnet 5",
+          aliases: ["sonnet"],
+          isCustom: false,
+          capabilities: null,
+        },
+      ],
+    } as ServerProvider;
+    const next = applyModelProxyProbe(snapshot, { available: true, models: ["sonnet"] });
+    expect(next.models.map((model) => model.slug)).toEqual(["claude-sonnet-5"]);
+  });
+
   it("warns on a ready instance when the proxy is unavailable", () => {
     const next = applyModelProxyProbe(readySnapshot, {
       available: false,

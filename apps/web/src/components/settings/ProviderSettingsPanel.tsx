@@ -103,7 +103,7 @@ import { UsageProviderSettings } from "./UsageProviderSettings";
 import { ProviderSetupSection, readAntigravityAuthMethod } from "./ProviderSetupSection";
 import { ProviderAuthenticationSection } from "./ProviderAuthenticationSection";
 import { CodexSetupSection, CodexManagedRuntimeFields } from "./CodexSetupSection";
-import { readCodexSetupMode } from "./CodexSetupSection.logic";
+import { readCodexSetupMode, withCodexSetupMode } from "./CodexSetupSection.logic";
 import { providerClients } from "./providerDriverMeta";
 import { searchableSetting } from "./settingsSearch";
 import {
@@ -1367,17 +1367,7 @@ function ProviderInstanceRow({
             enabled={resolveProviderInstanceEnabled(instance)}
             readOnly={readOnly}
             onModeChange={(setupMode) =>
-              actions.enableInstance(instanceId, {
-                ...instance,
-                enabled: true,
-                config: {
-                  ...(instance.config !== null && typeof instance.config === "object"
-                    ? instance.config
-                    : {}),
-                  enabled: true,
-                  setupMode,
-                },
-              })
+              actions.enableInstance(instanceId, withCodexSetupMode(instance, setupMode))
             }
           />
         ) : mode === "editor" &&
