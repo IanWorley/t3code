@@ -46,6 +46,11 @@ export interface DeriveServerPathsOptions {
   readonly baseDirIsExplicit?: boolean;
 }
 
+export interface DevProxyOverride {
+  readonly url?: string;
+  readonly apiKey?: Redacted.Redacted<string>;
+}
+
 export class ServerConfig extends Context.Service<
   ServerConfig,
   ServerDerivedPaths & {
@@ -70,6 +75,7 @@ export class ServerConfig extends Context.Service<
     readonly staticDir: string | undefined;
     readonly devUrl: URL | undefined;
     readonly devAuthToken?: Redacted.Redacted<string> | undefined;
+    readonly devProxy?: DevProxyOverride | undefined;
     readonly devAllowedOrigins: ReadonlyArray<string>;
     readonly noBrowser: boolean;
     readonly startupPresentation: StartupPresentation;

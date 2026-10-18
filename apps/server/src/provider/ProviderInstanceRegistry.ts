@@ -1,8 +1,6 @@
 import {
   providerInstanceConfigEnabledFlag,
   ProviderInstanceId,
-  type ProviderInstanceConfig,
-  type ProviderInstanceConfigMap,
   type ProviderDriverKind,
   type ServerProvider,
 } from "@t3tools/contracts";
@@ -19,6 +17,10 @@ import * as Stream from "effect/Stream";
 
 import { buildUnavailableProviderSnapshot } from "./unavailableProviderSnapshot.ts";
 import * as ProviderInstanceRegistryMutator from "./ProviderInstanceRegistryMutator.ts";
+import type {
+  ProviderInstanceEntry,
+  ProviderInstanceEntryMap,
+} from "./ProviderInstanceRegistryMutator.ts";
 import type { AnyProviderDriver, ProviderInstance } from "@t3tools/provider-core/server/driver";
 
 export class ProviderInstanceRegistry extends Context.Service<
@@ -45,7 +47,7 @@ export class ProviderInstanceRegistry extends Context.Service<
 interface LiveEntry {
   readonly instance: ProviderInstance;
   readonly scope: Scope.Closeable;
-  readonly entry: ProviderInstanceConfig;
+  readonly entry: ProviderInstanceEntry;
 }
 
 interface RegistryState {
@@ -54,7 +56,7 @@ interface RegistryState {
   readonly changes: PubSub.PubSub<void>;
 }
 
-const entryEqual = (a: ProviderInstanceConfig, b: ProviderInstanceConfig): boolean =>
+const entryEqual = (a: ProviderInstanceEntry, b: ProviderInstanceEntry): boolean =>
   Equal.equals(a, b);
 
 /**
@@ -62,7 +64,7 @@ const entryEqual = (a: ProviderInstanceConfig, b: ProviderInstanceConfig): boole
  * restrictive) — old settings files can carry both flags with conflicting
  * values, and a user's disable must never be silently undone.
  */
-const resolveEntryEnabled = (entry: ProviderInstanceConfig, typedConfig: unknown): boolean => {
+const resolveEntryEnabled = (entry: ProviderInstanceEntry, typedConfig: unknown): boolean => {
   const rawConfigEnabled = providerInstanceConfigEnabledFlag(entry.config);
   if (entry.enabled === false || rawConfigEnabled === false) {
     return false;
@@ -75,7 +77,7 @@ const buildEntry = <R>(input: {
   readonly parentScope: Scope.Scope;
   readonly instanceId: ProviderInstanceId;
   readonly rawInstanceId: string;
-  readonly entry: ProviderInstanceConfig;
+  readonly entry: ProviderInstanceEntry;
 }): Effect.Effect<
   | { readonly kind: "live"; readonly live: LiveEntry }
   | { readonly kind: "unavailable"; readonly snapshot: ServerProvider },
@@ -130,7 +132,7 @@ const buildEntry = <R>(input: {
         displayName: entry.displayName,
         accentColor: entry.accentColor,
         environment: entry.environment ?? [],
-        vibeProxy: entry.vibeProxy,
+        modelProxy: entry.modelProxy,
         enabled: resolveEntryEnabled(entry, typedConfig),
         config: typedConfig,
       })
@@ -168,12 +170,9 @@ const makeReconcile = <R>(input: {
   readonly state: RegistryState;
   readonly driversById: ReadonlyMap<ProviderDriverKind, AnyProviderDriver<R>>;
   readonly parentScope: Scope.Scope;
-}): ((
-  configMap: ProviderInstanceConfigMap,
-  options?: { readonly forceRebuildDrivers?: ReadonlySet<ProviderDriverKind> },
-) => Effect.Effect<void, never, R>) => {
+}): ((configMap: ProviderInstanceEntryMap) => Effect.Effect<void, never, R>) => {
   const { state, driversById, parentScope } = input;
-  return (configMap: ProviderInstanceConfigMap, options) =>
+  return (configMap: ProviderInstanceEntryMap) =>
     Effect.gen(function* () {
       const previousEntries = yield* Ref.get(state.entries);
       const previousUnavailable = yield* Ref.get(state.unavailable);
@@ -193,11 +192,7 @@ const makeReconcile = <R>(input: {
           continue;
         }
         const nextEntry = configMap[instanceId];
-        if (
-          nextEntry !== undefined &&
-          (!entryEqual(live.entry, nextEntry) ||
-            options?.forceRebuildDrivers?.has(nextEntry.driver) === true)
-        ) {
+        if (nextEntry !== undefined && !entryEqual(live.entry, nextEntry)) {
           replacedIds.add(instanceId);
         }
       }
@@ -273,7 +268,7 @@ const makeReconcile = <R>(input: {
 
 export const makeProviderInstanceRegistry = <R>(input: {
   readonly drivers: ReadonlyArray<AnyProviderDriver<R>>;
-  readonly configMap: ProviderInstanceConfigMap;
+  readonly configMap: ProviderInstanceEntryMap;
 }): Effect.Effect<
   {
     readonly registry: ProviderInstanceRegistry["Service"];
@@ -303,8 +298,7 @@ export const makeProviderInstanceRegistry = <R>(input: {
     const state: RegistryState = { entries, unavailable, changes };
     const reconcileWithR = makeReconcile({ state, driversById, parentScope });
     const reconcile: ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutatorShape["reconcile"] =
-      (configMap, options) =>
-        reconcileWithR(configMap, options).pipe(Effect.provideContext(driverContext));
+      (configMap) => reconcileWithR(configMap).pipe(Effect.provideContext(driverContext));
 
     yield* reconcile(input.configMap);
 
@@ -336,7 +330,7 @@ export const makeProviderInstanceRegistry = <R>(input: {
 
 export const layer = <R>(input: {
   readonly drivers: ReadonlyArray<AnyProviderDriver<R>>;
-  readonly configMap: ProviderInstanceConfigMap;
+  readonly configMap: ProviderInstanceEntryMap;
 }): Layer.Layer<
   ProviderInstanceRegistry | ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator,
   never,

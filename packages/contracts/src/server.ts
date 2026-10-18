@@ -213,15 +213,10 @@ export const ServerProviderUpdateState = Schema.Struct({
 });
 export type ServerProviderUpdateState = typeof ServerProviderUpdateState.Type;
 
-export const ServerProviderVibeProxyStatus = Schema.Struct({
-  enabled: Schema.Boolean,
-  endpoint: TrimmedNonEmptyString,
-  reachable: Schema.Boolean,
-  models: Schema.Array(TrimmedNonEmptyString),
-  addedModels: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
-  message: Schema.optional(TrimmedNonEmptyString),
+export const ServerProviderModelProxyStatus = Schema.Struct({
+  status: Schema.Literals(["checking", "available", "unavailable"]),
 });
-export type ServerProviderVibeProxyStatus = typeof ServerProviderVibeProxyStatus.Type;
+export type ServerProviderModelProxyStatus = typeof ServerProviderModelProxyStatus.Type;
 
 export const ServerProvider = Schema.Struct({
   // Routing key for the configured instance this snapshot represents. This
@@ -284,7 +279,7 @@ export const ServerProvider = Schema.Struct({
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   compatibilityAdvisory: Schema.optionalKey(ServerProviderCompatibilityAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
-  vibeProxy: Schema.optionalKey(ServerProviderVibeProxyStatus),
+  modelProxy: Schema.optionalKey(ServerProviderModelProxyStatus),
 });
 export type ServerProvider = typeof ServerProvider.Type;
 

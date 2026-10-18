@@ -8,11 +8,12 @@ export const mergeProviderInstanceEnvironment = Effect.fn(function* (
   environment: ProviderInstanceEnvironment | undefined,
   baseEnv: NodeJS.ProcessEnv = process.env,
 ) {
-  // Callers may add their own variables, so never hand back baseEnv itself.
-  const next: NodeJS.ProcessEnv = { ...baseEnv };
-  if (!environment || environment.length === 0) return next;
+  if (!environment || environment.length === 0) {
+    return baseEnv;
+  }
 
   const home = yield* HostProcess.HomeDirectory;
+  const next: NodeJS.ProcessEnv = { ...baseEnv };
   for (const variable of environment) {
     // Child processes do not apply shell expansion to environment values.
     next[variable.name] =

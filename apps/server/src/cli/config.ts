@@ -185,6 +185,27 @@ const DevAuthTokenConfig = Config.Redacted("T3CODE_DEV_AUTH_TOKEN").pipe(
   Config.map(Option.getOrUndefined),
 );
 
+const optionalTrimmedString = (name: string) =>
+  Config.String(name).pipe(
+    Config.option,
+    Config.map(Option.map((value) => value.trim())),
+    Config.map(Option.filter((value) => value.length > 0)),
+    Config.map(Option.getOrUndefined),
+  );
+
+const DevProxyConfig = Config.all({
+  url: optionalTrimmedString("T3CODE_DEV_PROXY_URL"),
+  apiKey: optionalTrimmedString("T3CODE_DEV_PROXY_API_KEY").pipe(
+    Config.map((value) => (value === undefined ? undefined : Redacted.make(value))),
+  ),
+}).pipe(
+  Config.map(({ url, apiKey }): ServerConfig.DevProxyOverride | undefined =>
+    url === undefined && apiKey === undefined
+      ? undefined
+      : { ...(url === undefined ? {} : { url }), ...(apiKey === undefined ? {} : { apiKey }) },
+  ),
+);
+
 export interface CliServerFlags {
   readonly mode: Option.Option<ServerConfig.RuntimeMode>;
   readonly port: Option.Option<number>;
@@ -315,6 +336,7 @@ export const resolveServerConfig = (
     );
     const devAuthToken =
       mode === "web" && devUrl !== undefined ? yield* DevAuthTokenConfig : undefined;
+    const devProxy = devUrl !== undefined ? yield* DevProxyConfig : undefined;
     const explicitBaseDir = resolveOptionPrecedence(
       normalizedFlags.baseDir,
       Option.fromUndefinedOr(env.t3Home),
@@ -461,6 +483,7 @@ export const resolveServerConfig = (
       staticDir,
       devUrl,
       ...(devAuthToken === undefined ? {} : { devAuthToken }),
+      ...(devProxy === undefined ? {} : { devProxy }),
       devAllowedOrigins: env.devAllowedOrigins,
       noBrowser,
       startupPresentation,

@@ -1,8 +1,4 @@
-import {
-  CodexSettings,
-  ProviderDriverKind,
-  VIBEPROXY_CLIENT_API_KEY_ENV,
-} from "@t3tools/contracts";
+import { CodexSettings, ProviderDriverKind } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -29,7 +25,13 @@ import {
   probeCodexSkillsForCwd,
   withCodexAppServerClient,
 } from "../CodexProvider.ts";
-import { consumeCodexLaunchArgsEnvironment, resolveCodexLaunchArgs } from "../codexLaunchArgs.ts";
+import { resolveCodexLaunchArgs } from "../codexLaunchArgs.ts";
+import {
+  modelProxyCodexEnvironment,
+  resolveModelProxyRoute,
+  withModelProxyPending,
+  withModelProxyProbe,
+} from "../modelProxy.ts";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
 import { applyCodexModelCatalog } from "../codexModelCatalog.ts";
@@ -48,14 +50,6 @@ import {
   makeProviderSnapshotSettingsSource,
   type ProviderSnapshotSettings,
 } from "@t3tools/provider-core/server/snapshotSettings";
-import {
-  applyVibeProxyStatus,
-  checkingVibeProxyStatus,
-  parseVibeProxyUrl,
-  probeVibeProxy,
-  resolveVibeProxyClientKey,
-  withVibeProxyCodexLaunchArgs,
-} from "../vibeProxy.ts";
 import {
   codexContinuationIdentity,
   materializeCodexShadowHome,
@@ -118,14 +112,14 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
   configSchema: CodexSettings,
   defaultConfig: (): CodexSettings => decodeCodexSettings({}),
   usage: codexUsageReader,
-  create: ({ instanceId, displayName, accentColor, environment, vibeProxy, enabled, config }) =>
+  create: ({ instanceId, displayName, accentColor, environment, modelProxy, enabled, config }) =>
     Effect.gen(function* () {
-      if (config.setupMode === "managed" && vibeProxy?.enabled) {
+      if (config.setupMode === "managed" && modelProxy !== undefined) {
         return yield* new ProviderDriverError({
           driver: DRIVER_KIND,
           instanceId,
           detail:
-            "VibeProxy requires an existing Codex CLI installation. Switch setup mode before enabling proxy routing.",
+            "The model proxy needs an existing Codex CLI. Switch this instance's setup mode or stop routing it through the proxy.",
         });
       }
       if (config.setupMode === "managed")
@@ -145,37 +139,16 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
       const latestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
       const modelCatalog = yield* ModelCatalog.ModelCatalog;
       const currentCatalog = modelCatalog.current(DRIVER_KIND);
-      const host = yield* ProviderHost.ProviderHost;
-      const globalSettings = yield* host.settings.get.pipe(
-        Effect.mapError(
-          (cause) =>
-            new ProviderDriverError({
-              driver: DRIVER_KIND,
-              instanceId,
-              detail: "Failed to read the global VibeProxy settings.",
-              cause,
-            }),
-        ),
-      );
-      const vibeProxyEndpoint = vibeProxy?.enabled
-        ? parseVibeProxyUrl(globalSettings.vibeProxy.url)
-        : null;
-      if (vibeProxy?.enabled && vibeProxyEndpoint === null) {
-        return yield* new ProviderDriverError({
-          driver: DRIVER_KIND,
-          instanceId,
-          detail: "VibeProxy routing is enabled, but the global VibeProxy URL is invalid.",
-        });
-      }
-      const clientKey = vibeProxyEndpoint
-        ? globalSettings.vibeProxy.apiKey.value.trim() || resolveVibeProxyClientKey(environment)
-        : undefined;
-      const resolvedLaunch = consumeCodexLaunchArgsEnvironment(
-        config.launchArgs,
+      const proxyRoute = yield* resolveModelProxyRoute({
+        driver: DRIVER_KIND,
+        instanceId,
+        settings: modelProxy,
+      });
+      const processEnv = modelProxyCodexEnvironment(
         yield* mergeProviderInstanceEnvironment(environment),
+        config.launchArgs,
+        proxyRoute,
       );
-      const processEnv = resolvedLaunch.environment;
-      if (clientKey) processEnv[VIBEPROXY_CLIENT_API_KEY_ENV] = clientKey;
       const homeLayout = yield* resolveCodexHomeLayout(config);
       const continuationIdentity = codexContinuationIdentity(homeLayout);
       const stampIdentity = withInstanceIdentity({
@@ -201,15 +174,6 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
         enabled,
         binaryPath: expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory),
         homePath: homeLayout.effectiveHomePath ?? "",
-        ...(vibeProxyEndpoint
-          ? {
-              launchArgs: withVibeProxyCodexLaunchArgs(
-                resolvedLaunch.launchArgs,
-                vibeProxyEndpoint,
-                clientKey !== undefined,
-              ),
-            }
-          : { launchArgs: resolvedLaunch.launchArgs }),
       } satisfies CodexSettings;
       const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
         resolveProviderMaintenanceCapabilitiesEffect(
@@ -232,10 +196,10 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
           accentColor,
           environment,
           enabled,
-          config: { ...config, launchArgs: effectiveConfig.launchArgs },
+          config,
         },
         {
-          processEnvironment: processEnv,
+          resolvedEnvironment: processEnv,
           onUsageLimits: (update) => snapshot.applyUsageLimits(update),
         },
       ).pipe(
@@ -252,7 +216,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
 
       // Kick the TTL-gated manifest refresh in the background and classify with the in-memory
       // manifest, so a slow or hung fetch never delays the provider check.
-      const baseCheckProvider = modelCatalog.refreshInBackground.pipe(
+      const checkProvider = modelCatalog.refreshInBackground.pipe(
         Effect.andThen(
           Effect.zipWith(
             checkCodexProviderStatus(effectiveConfig, undefined, processEnv),
@@ -265,37 +229,22 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, pathService),
       );
-      const checkProvider = vibeProxyEndpoint
-        ? Effect.zipWith(
-            baseCheckProvider,
-            probeVibeProxy(vibeProxyEndpoint, clientKey).pipe(
-              Effect.provideService(HttpClient.HttpClient, httpClient),
-            ),
-            (provider, status) => applyVibeProxyStatus(provider, status),
-            { concurrent: true },
-          )
-        : baseCheckProvider;
       const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<CodexSettings>>({
         resolveMaintenance,
         getSettings: snapshotSettings.getSettings,
         streamSettings: snapshotSettings.streamSettings,
         haveSettingsChanged: haveProviderSnapshotSettingsChanged,
-        initialSnapshot: (settings) => {
-          const pending = Effect.zipWith(
-            makePendingCodexProvider(settings.provider),
-            currentCatalog,
-            (draft, catalog) => stampIdentity(applyCodexModelCatalog(draft, catalog)),
-          );
-          return vibeProxyEndpoint
-            ? pending.pipe(
-                Effect.map((provider) =>
-                  applyVibeProxyStatus(provider, checkingVibeProxyStatus(vibeProxyEndpoint)),
-                ),
-              )
-            : pending;
-        },
-        checkProvider,
+        initialSnapshot: (settings) =>
+          withModelProxyPending(
+            proxyRoute,
+            Effect.zipWith(
+              makePendingCodexProvider(settings.provider),
+              currentCatalog,
+              (draft, catalog) => stampIdentity(applyCodexModelCatalog(draft, catalog)),
+            ),
+          ),
+        checkProvider: withModelProxyProbe(proxyRoute, httpClient, checkProvider),
         enrichSnapshot: ({ settings, snapshot, publishSnapshot }) =>
           resolveMaintenance().pipe(
             Effect.flatMap((maintenanceCapabilities) =>

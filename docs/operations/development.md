@@ -96,6 +96,22 @@ startup and keeps its own SQLite data, signing key, and revocation state. Deskto
 servers ignore the value. See [environment authentication](../internals/environment-auth.md#reusable-dev-credential)
 for the security model.
 
+### Dev proxy URL
+
+To point [model proxy](../user/model-proxy.md) routing at a test proxy without changing a
+worktree's saved settings, set the dev proxy URL (and its key, if the proxy needs one) in `.env` or
+the shell before `vp run dev`:
+
+```dotenv
+T3CODE_DEV_PROXY_URL=http://localhost:8317
+T3CODE_DEV_PROXY_API_KEY=<the proxy's client key>
+```
+
+Each value replaces the saved one for providers that have **Model proxy** turned on. The Settings
+page still shows the saved values, and the server logs that the override is active. Only servers
+started by the dev runner (with `VITE_DEV_SERVER_URL` set) read these variables. Packaged desktop
+builds and `npx t3` ignore them.
+
 ## Checks
 
 Run checks for the files and packages you changed:

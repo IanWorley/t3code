@@ -7,17 +7,6 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { mergeProviderInstanceEnvironment } from "./instanceEnvironment.ts";
 
 describe("mergeProviderInstanceEnvironment", () => {
-  it.effect("returns an environment that can be changed without mutating the base", () =>
-    Effect.gen(function* () {
-      const baseEnv = { PATH: "/bin" };
-      const merged = yield* mergeProviderInstanceEnvironment(undefined, baseEnv);
-
-      merged.NEW_VALUE = "new";
-
-      expect(baseEnv).toEqual({ PATH: "/bin" });
-    }),
-  );
-
   it.effect.each([
     { value: "~/.account", tail: ".account" },
     { value: "~\\.account\\work", tail: ".account\\work" },

@@ -1075,7 +1075,11 @@ export function makeClaudeQueryOptions(input: {
   readonly supportedDialogKinds?: ClaudeQueryOptions["supportedDialogKinds"];
   readonly allowDangerouslySkipPermissions?: boolean;
 }): ClaudeAgentSdkQueryOptions {
-  const compiledSelection = compileClaudeModelSelection(input.modelSelection);
+  const compiledSelection = compileClaudeModelSelection(
+    input.modelSelection,
+    BUNDLED_CLAUDE_MODEL_CATALOG,
+    input.settings?.customModels,
+  );
   const {
     "permission-mode": launchArgPermissionMode,
     "dangerously-skip-permissions": launchArgSkipPermissions,
@@ -4889,7 +4893,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             existingSubagent === undefined
               ? (input.effort ??
                 input.owner?.effort ??
-                compileClaudeModelSelection(input.context.input.modelSelection).effort)
+                compileClaudeModelSelection(
+                  input.context.input.modelSelection,
+                  BUNDLED_CLAUDE_MODEL_CATALOG,
+                  adapterOptions.settings.customModels,
+                ).effort)
               : existingSubagent.effort;
           const model = input.model ?? priorTask?.model ?? null;
           const task = {
@@ -8046,7 +8054,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               : { allowedTools: queryPolicy.allowedTools }),
           });
           const queryPolicyKey = claudeEffectiveQueryPolicyKey(queryPolicy, mcpOverrides);
-          const compiledSelection = compileClaudeModelSelection(turnInput.modelSelection);
+          const compiledSelection = compileClaudeModelSelection(
+            turnInput.modelSelection,
+            BUNDLED_CLAUDE_MODEL_CATALOG,
+            adapterOptions.settings.customModels,
+          );
           const resumeSessionAt = yield* getNativeConversationHeadId(turnInput.providerThread);
           const existing = yield* Ref.get(queryContext);
           // A continuation prompts nothing: it drains output the live process
@@ -9139,7 +9151,7 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
   function* (
     input: ProviderAdapterDriverCreateInput<ClaudeSettings>,
     hooks: Pick<ClaudeAdapterV2Options, "scopedLimitNames" | "onUsageLimits"> & {
-      readonly processEnvironment?: NodeJS.ProcessEnv;
+      readonly resolvedEnvironment?: NodeJS.ProcessEnv;
     } = {},
   ) {
     const { instanceId, environment, enabled, config } = input;
@@ -9150,7 +9162,7 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
     const serverConfig = yield* ServerConfig.ServerConfig;
     const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
     const baseEnvironment =
-      hooks.processEnvironment ??
+      hooks.resolvedEnvironment ??
       (yield* mergeProviderInstanceEnvironment(environment, hostEnvironment));
     const claudeEnvironment = yield* makeClaudeEnvironment(config, baseEnvironment);
     const path = yield* Path.Path;

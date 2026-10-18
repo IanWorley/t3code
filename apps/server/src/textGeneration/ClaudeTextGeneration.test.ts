@@ -228,6 +228,31 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
     ),
   );
 
+  it.effect("passes effort through for a model outside the Claude catalog", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({ structured_output: { subject: "Route through proxy", body: "" } }),
+        argsMustContain: "--model gpt-6.1-sol --effort high --settings",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateCommitMessage({
+            cwd: process.cwd(),
+            branch: "feature/model-proxy",
+            stagedSummary: "M README.md",
+            stagedPatch: "diff --git a/README.md b/README.md",
+            modelSelection: createModelSelection(
+              ProviderInstanceId.make("claudeAgent"),
+              "gpt-6.1-sol",
+              [{ id: "effort", value: "high" }],
+            ),
+          });
+
+          expect(generated.subject).toBe("Route through proxy");
+        }),
+    ),
+  );
+
   it.effect("keeps a configured custom alias opaque to the Claude CLI", () =>
     withFakeClaudeEnv(
       {

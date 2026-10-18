@@ -5,7 +5,6 @@ import { describe, it } from "vite-plus/test";
 import {
   codexAppServerArgs,
   codexExecLaunchArgs,
-  consumeCodexLaunchArgsEnvironment,
   resolveCodexLaunchArgs,
 } from "./codexLaunchArgs.ts";
 
@@ -26,21 +25,6 @@ describe("resolveCodexLaunchArgs", () => {
 
   it("ignores whitespace-only environment values", () => {
     NodeAssert.equal(resolveCodexLaunchArgs("", { T3CODE_CODEX_LAUNCH_ARGS: "   " }), "");
-  });
-});
-
-describe("consumeCodexLaunchArgsEnvironment", () => {
-  it("resolves the environment override once and removes it from the child environment", () => {
-    NodeAssert.deepStrictEqual(
-      consumeCodexLaunchArgsEnvironment("--enable settings-feature", {
-        PATH: "/usr/bin",
-        T3CODE_CODEX_LAUNCH_ARGS: " --strict-config --enable env-feature ",
-      }),
-      {
-        launchArgs: "--strict-config --enable env-feature",
-        environment: { PATH: "/usr/bin" },
-      },
-    );
   });
 });
 

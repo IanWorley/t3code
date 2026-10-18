@@ -47,26 +47,13 @@ function providerDisplayLabel(provider: {
   readonly displayName?: string | undefined;
   readonly driver: string;
   readonly instanceId: string;
-  readonly vibeProxy?:
-    | {
-        readonly enabled: boolean;
-        readonly reachable: boolean;
-      }
-    | undefined;
 }): string {
-  const label = provider.displayName
-    ? provider.displayName
-    : provider.driver === "codex"
-      ? "Codex"
-      : provider.driver === "claudeAgent"
-        ? "Claude"
-        : provider.driver === "kiro"
-          ? "Kiro"
-          : provider.driver === "pi"
-            ? "Pi"
-            : provider.instanceId;
-  if (!provider.vibeProxy?.enabled) return label;
-  return `${label} · VibeProxy${provider.vibeProxy.reachable ? "" : " unavailable"}`;
+  if (provider.displayName) return provider.displayName;
+  if (provider.driver === "codex") return "Codex";
+  if (provider.driver === "claudeAgent") return "Claude";
+  if (provider.driver === "kiro") return "Kiro";
+  if (provider.driver === "pi") return "Pi";
+  return provider.instanceId;
 }
 
 function isProviderEnabledForProject(

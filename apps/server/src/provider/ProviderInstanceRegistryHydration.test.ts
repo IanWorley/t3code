@@ -54,6 +54,39 @@ describe("deriveProviderInstanceConfigMap", () => {
     });
   });
 
+  it("gives the environment's model proxy only to instances that opted in", () => {
+    const routedId = ProviderInstanceId.make("claude_routed");
+    const modelProxy = { url: "http://proxy.test:8317", apiKey: "proxy-key" };
+    const settings = settingsWith({
+      modelProxy,
+      providerInstances: {
+        [instanceId]: { driver: ProviderDriverKind.make("codex") },
+        [routedId]: { driver: ProviderDriverKind.make("claudeAgent"), useModelProxy: true },
+      },
+    });
+
+    const merged = deriveProviderInstanceConfigMap(settings);
+
+    expect(merged[routedId]?.modelProxy).toEqual(modelProxy);
+    expect(merged[instanceId]?.modelProxy).toBeUndefined();
+  });
+
+  it("lets the dev proxy URL and key replace only the fields they set", () => {
+    const settings = settingsWith({
+      modelProxy: { url: "http://saved.test:8317", apiKey: "saved-key" },
+      providerInstances: {
+        [instanceId]: { driver: ProviderDriverKind.make("codex"), useModelProxy: true },
+      },
+    });
+
+    const merged = deriveProviderInstanceConfigMap(settings, { url: "http://dev.test:9000" });
+
+    expect(merged[instanceId]?.modelProxy).toEqual({
+      url: "http://dev.test:9000",
+      apiKey: "saved-key",
+    });
+  });
+
   it("leaves an already machine-enabled instance untouched", () => {
     const settings = settingsWith({
       providerInstances: {

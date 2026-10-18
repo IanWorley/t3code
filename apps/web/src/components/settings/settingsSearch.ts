@@ -635,6 +635,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "model-proxy",
+    title: "Model proxy",
+    to: "/settings/providers",
+    searchTerms: ["model proxy gateway base url api key route codex claude openai anthropic"],
+    providerSettingsOnly: true,
+  },
+  {
     id: "usage-providers",
     title: "Usage providers",
     to: "/settings/providers",

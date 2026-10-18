@@ -1,29 +1,29 @@
 import {
   defaultInstanceIdForDriver,
-  ProviderDriverKind,
   providerInstanceConfigEnabledFlag,
   resolveProviderInstanceEnabled,
-  type ProviderInstanceConfig,
-  type ProviderInstanceConfigMap,
   type ProviderInstanceId,
   ServerSettings,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as Equal from "effect/Equal";
 import * as Layer from "effect/Layer";
-import * as Ref from "effect/Ref";
+import * as Redacted from "effect/Redacted";
 import * as Stream from "effect/Stream";
 
 import * as Settings from "../serverSettings.ts";
 import { BUILT_IN_DRIVERS, type BuiltInDriversEnv } from "./builtInDrivers.ts";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import * as ProviderInstanceRegistryMutator from "./ProviderInstanceRegistryMutator.ts";
+import type {
+  ProviderInstanceEntry,
+  ProviderInstanceEntryMap,
+} from "./ProviderInstanceRegistryMutator.ts";
 import * as ProviderOrchestrationAdapterInfrastructure from "./ProviderOrchestrationAdapterInfrastructure.ts";
 import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
 import * as ProviderHostLive from "./ProviderHostLive.ts";
 import type * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import type * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
-import type * as ServerConfig from "../config.ts";
+import * as ServerConfig from "../config.ts";
 
 type ProviderInstanceRegistryHydrationEnv =
   | Exclude<
@@ -36,22 +36,11 @@ type ProviderInstanceRegistryHydrationEnv =
   | BackgroundPolicy.BackgroundPolicy
   | ServerConfig.ServerConfig;
 
-const VIBEPROXY_DRIVER_KINDS = new Set([
-  ProviderDriverKind.make("codex"),
-  ProviderDriverKind.make("claudeAgent"),
-]);
-
-/**
- * Explicit `providerInstances` entries plus an implicit default instance for
- * each built-in driver whose default slot is empty. Pure so the hydration
- * rule can be tested without layers.
- */
 export const deriveProviderInstanceConfigMap = (
   settings: ServerSettings,
-): ProviderInstanceConfigMap => {
-  const merged: Record<string, ProviderInstanceConfig> = {
-    ...settings.providerInstances,
-  };
+  devProxy?: ServerConfig.DevProxyOverride,
+): ProviderInstanceEntryMap => {
+  const merged: Record<string, ProviderInstanceEntry> = { ...settings.providerInstances };
 
   for (const driver of BUILT_IN_DRIVERS) {
     if (driver.metadata.hasDefaultInstance === false) continue;
@@ -81,7 +70,18 @@ export const deriveProviderInstanceConfigMap = (
     }
   }
 
-  return merged as ProviderInstanceConfigMap;
+  const modelProxy = {
+    url: devProxy?.url ?? settings.modelProxy.url,
+    apiKey:
+      devProxy?.apiKey === undefined ? settings.modelProxy.apiKey : Redacted.value(devProxy.apiKey),
+  };
+  for (const [instanceId, entry] of Object.entries(merged)) {
+    if (entry.useModelProxy === true) {
+      merged[instanceId] = { ...entry, modelProxy };
+    }
+  }
+
+  return merged as ProviderInstanceEntryMap;
 };
 
 const layerSettingsWatcher = Layer.effectDiscard(
@@ -89,25 +89,16 @@ const layerSettingsWatcher = Layer.effectDiscard(
     const mutator = yield* ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator;
     const serverSettings = yield* Settings.ServerSettingsService;
     const settingsChanges = yield* serverSettings.subscribeChanges;
-    const initialSettings = yield* serverSettings.getSettings.pipe(
-      Effect.orElseSucceed(() => undefined),
-    );
-    const previousVibeProxy = yield* Ref.make(initialSettings?.vibeProxy);
+    const { devProxy } = yield* ServerConfig.ServerConfig;
     yield* settingsChanges.pipe(
       Stream.runForEach((next) =>
-        Ref.getAndSet(previousVibeProxy, next.vibeProxy).pipe(
-          Effect.flatMap((previous) =>
-            mutator.reconcile(
-              deriveProviderInstanceConfigMap(next),
-              previous !== undefined && !Equal.equals(previous, next.vibeProxy)
-                ? { forceRebuildDrivers: VIBEPROXY_DRIVER_KINDS }
-                : undefined,
+        mutator
+          .reconcile(deriveProviderInstanceConfigMap(next, devProxy))
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
             ),
           ),
-          Effect.catchCause((cause) =>
-            Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
-          ),
-        ),
       ),
       Effect.forkScoped,
     );
@@ -124,10 +115,17 @@ export const layer: Layer.Layer<
     const initialSettings: ServerSettings | undefined = yield* serverSettings.getSettings.pipe(
       Effect.orElseSucceed(() => undefined),
     );
+    const { devProxy } = yield* ServerConfig.ServerConfig;
+    if (devProxy !== undefined) {
+      yield* Effect.logInfo("Using the dev proxy URL from T3CODE_DEV_PROXY_* for the model proxy", {
+        url: devProxy.url,
+        apiKeyOverridden: devProxy.apiKey !== undefined,
+      });
+    }
     const initialConfigMap =
       initialSettings === undefined
-        ? ({} as ProviderInstanceConfigMap)
-        : deriveProviderInstanceConfigMap(initialSettings);
+        ? ({} as ProviderInstanceEntryMap)
+        : deriveProviderInstanceConfigMap(initialSettings, devProxy);
 
     const layerMutable = ProviderInstanceRegistry.layer({
       drivers: BUILT_IN_DRIVERS,

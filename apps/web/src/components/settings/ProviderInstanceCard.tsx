@@ -21,7 +21,6 @@ import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "
 import {
   isProviderDriverKind,
   resolveProviderInstanceEnabled,
-  VIBEPROXY_CLIENT_API_KEY_ENV,
   type ProviderInstanceConfig,
   type ProviderInstanceEnvironmentVariable,
   type ProviderInstanceId,
@@ -31,6 +30,7 @@ import {
   type ProviderDriverKind,
   type ServerProvider,
   type ServerProviderModel,
+  type ServerProviderModelProxyStatus,
 } from "@t3tools/contracts";
 
 import {
@@ -42,7 +42,6 @@ import { cn } from "../../lib/utils";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { normalizeProviderAccentColor } from "../../providerInstances";
-import { isVibeProxySupportedDriver } from "../../vibeProxyPresentation";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
@@ -160,7 +159,6 @@ function nextConfigBlobWithValue(
 export function deriveProviderModelsForDisplay(input: {
   readonly liveModels: ReadonlyArray<ServerProviderModel> | undefined;
   readonly customModels: ReadonlyArray<CustomModelDefinition>;
-  readonly proxyModels?: ReadonlyArray<string>;
 }): ReadonlyArray<ServerProviderModel> {
   const liveCustomModelsBySlug = new Map(
     Arr.filterMap(input.liveModels ?? [], (model) =>
@@ -182,18 +180,6 @@ export function deriveProviderModelsForDisplay(input: {
           },
         ],
   );
-  const configuredSlugs = new Set(input.customModels.map((entry) => entry.slug));
-  for (const slug of new Set(input.proxyModels ?? [])) {
-    if (configuredSlugs.has(slug) || serverSlugs.has(slug)) continue;
-    customModels.push(
-      liveCustomModelsBySlug.get(slug) ?? {
-        slug,
-        name: slug,
-        isCustom: true,
-        capabilities: null,
-      },
-    );
-  }
   return [...serverModels, ...customModels];
 }
 
@@ -629,6 +615,16 @@ const NO_CUSTOM_MODELS: ReadonlyArray<CustomModelDefinition> = [];
  *     that project's override, leaving the environment's `instance.enabled`
  *     untouched.
  */
+function describeModelProxyRouting(
+  useModelProxy: boolean,
+  status: ServerProviderModelProxyStatus["status"] | undefined,
+): string {
+  if (!useModelProxy) return "Send this provider's requests through the model proxy below.";
+  if (status === "available") return "Requests go through the model proxy.";
+  if (status === "unavailable") return "The model proxy is unavailable, so requests will fail.";
+  return "Checking the model proxy…";
+}
+
 export function ProviderInstanceCard({
   instanceId,
   instance,
@@ -727,11 +723,6 @@ export function ProviderInstanceCard({
   const driverKind: ProviderDriverKind | null = isProviderDriverKind(instance.driver)
     ? instance.driver
     : null;
-  const supportsVibeProxy =
-    driverKind !== null &&
-    isVibeProxySupportedDriver(driverKind) &&
-    (driverKind !== "codex" || readCodexSetupMode(instance.config) !== "managed");
-  const vibeProxyEnabled = instance.vibeProxy?.enabled ?? false;
   // Keyed on the stored list, not the whole instance, so writing another field
   // leaves the models list (often ~50 rows) with the same props.
   const storedCustomModels =
@@ -745,9 +736,6 @@ export function ProviderInstanceCard({
   const modelsForDisplay = deriveProviderModelsForDisplay({
     liveModels: liveProvider?.models,
     customModels,
-    ...(liveProvider?.vibeProxy?.addedModels
-      ? { proxyModels: liveProvider.vibeProxy.addedModels }
-      : {}),
   });
   const updateDisplayName = (value: string) => {
     const trimmed = value.trim();
@@ -796,6 +784,16 @@ export function ProviderInstanceCard({
     onUpdate({ ...rest, config: nextConfig } as ProviderInstanceConfig);
   });
 
+  const useModelProxy = instance.useModelProxy === true;
+  const showModelProxySwitch =
+    instance.driver === "claudeAgent" ||
+    (instance.driver === "codex" &&
+      (readCodexSetupMode(instance.config) !== "managed" || useModelProxy));
+  const updateUseModelProxy = (value: boolean) => {
+    const { useModelProxy: _omit, ...rest } = instance;
+    onUpdate(value ? { ...rest, useModelProxy: true } : rest);
+  };
+
   const updateEnvironment = (environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>) => {
     const cleaned = environment.filter((variable) => variable.name.trim().length > 0);
     const { environment: _omit, ...rest } = instance;
@@ -806,10 +804,7 @@ export function ProviderInstanceCard({
     );
   };
   const environmentFields = driverOption?.environmentFields ?? [];
-  const environmentFieldNames = new Set([
-    VIBEPROXY_CLIENT_API_KEY_ENV,
-    ...environmentFields.map((field) => field.name),
-  ]);
+  const environmentFieldNames = new Set(environmentFields.map((field) => field.name));
   const genericEnvironment = providerEnvironmentWithoutNames(
     instance.environment,
     environmentFieldNames,
@@ -1093,15 +1088,6 @@ export function ProviderInstanceCard({
           {driverOption.badgeLabel}
         </Badge>
       ) : null}
-      {supportsVibeProxy && vibeProxyEnabled ? (
-        <Badge
-          variant={liveProvider?.vibeProxy?.reachable ? "default" : "warning"}
-          size="sm"
-          className="shrink-0"
-        >
-          via VibeProxy
-        </Badge>
-      ) : null}
       {versionCodeNode}
       {versionAdvisoryNode}
       <span
@@ -1274,6 +1260,19 @@ export function ProviderInstanceCard({
         aria-disabled={readOnly || undefined}
         className={readOnly ? "opacity-50 select-none" : undefined}
       >
+        {showModelProxySwitch ? (
+          <SettingsRow
+            title="Model proxy"
+            description={describeModelProxyRouting(useModelProxy, liveProvider?.modelProxy?.status)}
+            control={
+              <Switch
+                checked={useModelProxy}
+                onCheckedChange={(checked) => updateUseModelProxy(Boolean(checked))}
+                aria-label={`Route ${displayName} through the model proxy`}
+              />
+            }
+          />
+        ) : null}
         <ProviderEnvironmentSection
           environment={genericEnvironment}
           onChange={updateGenericEnvironment}

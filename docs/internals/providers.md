@@ -160,24 +160,17 @@ The logger filters those notifications before traversal when an older provider s
 Model classification has its own [manifest constraints](./model-manifest.md). Assistant-reference
 handling is documented under [citations](./assistant-citations.md).
 
-## VibeProxy routing
+## Model proxy routing
 
-Codex and Claude instances can opt into VibeProxy through the provider-instance envelope. The proxy
-URL and client API key are environment-global settings; the URL defaults to
-`http://localhost:8317`, and the key is stored in the server secret store. The server probes health
-and models during the existing provider refresh lifecycle and publishes redacted status on that
-instance's provider snapshot. Changing either global value rebuilds only Codex and Claude
-instances. Older per-instance client keys remain a runtime fallback so existing configurations
-continue to work.
+Codex and Claude instances opt into the environment's model proxy with `useModelProxy`. Registry
+hydration copies `settings.modelProxy` into each opted-in entry
+([`ProviderInstanceRegistryHydration.ts`](../../apps/server/src/provider/ProviderInstanceRegistryHydration.ts)),
+so a URL or key change makes exactly those entries unequal and the normal reconcile rebuilds them.
+Keep the proxy on the entry; reading global settings inside a driver would leave live instances on
+the old endpoint.
 
-Routing is applied only to the effective process configuration. Codex receives a T3-owned custom
-model-provider override; Claude receives an Anthropic gateway environment overlay that removes
-competing Bedrock, Vertex, Foundry, and other backend selectors inherited by the server process.
-Neither driver edits harness config files. Enabled routing fails closed when URL validation or
-health fails, so an explicit proxy choice never silently becomes a direct upstream request.
-Proxy-only model IDs are projected as custom models while exact built-in matches retain their
-existing metadata. Each instance can disable that projection independently with
-`vibeProxy.offerModels` while keeping the runtime route active; the live proxy inventory remains in
-the status snapshot for availability advisories. The snapshot also records the exact IDs added by
-the projection so clients badge only proxy-added models, not native harness models whose traffic
-happens to use the proxy route.
+Routing only changes the process environment the driver hands to every spawn site
+([`modelProxy.ts`](../../apps/server/src/provider/modelProxy.ts)). Codex picks up its proxy
+provider through the `T3CODE_CODEX_LAUNCH_ARGS` override, which wins over configured launch args
+everywhere. Neither driver edits harness config files, and an invalid URL fails the instance rather
+than sending traffic upstream.
