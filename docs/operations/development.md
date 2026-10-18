@@ -96,14 +96,15 @@ startup and keeps its own SQLite data, signing key, and revocation state. Deskto
 servers ignore the value. See [environment authentication](../internals/environment-auth.md#reusable-dev-credential)
 for the security model.
 
-### Model proxy override
+### Dev proxy URL
 
-To test [model proxy](../user/model-proxy.md) routing without changing a worktree's saved
-settings, set either or both of these in `.env` or the shell before `vp run dev`:
+To point [model proxy](../user/model-proxy.md) routing at a test proxy without changing a
+worktree's saved settings, set the dev proxy URL (and its key, if the proxy needs one) in `.env` or
+the shell before `vp run dev`:
 
 ```dotenv
-T3CODE_DEV_MODEL_PROXY_URL=http://localhost:8317
-T3CODE_DEV_MODEL_PROXY_API_KEY=<the proxy's client key>
+T3CODE_DEV_PROXY_URL=http://localhost:8317
+T3CODE_DEV_PROXY_API_KEY=<the proxy's client key>
 ```
 
 Each value replaces the saved one for providers that have **Model proxy** turned on. The Settings

@@ -47,10 +47,11 @@ export interface DeriveServerPathsOptions {
 }
 
 /**
- * Dev-runner-only stand-in for the saved model proxy, so a worktree can test routing without
- * touching settings. Production servers never read it.
+ * `T3CODE_DEV_PROXY_URL` / `T3CODE_DEV_PROXY_API_KEY`: a dev-runner-only stand-in for the saved
+ * model proxy, so a worktree can test routing without touching settings. Unrelated to Vite's
+ * `/api` dev proxy, and production servers never read it.
  */
-export interface DevModelProxyOverride {
+export interface DevProxyOverride {
   readonly url?: string;
   readonly apiKey?: Redacted.Redacted<string>;
 }
@@ -79,7 +80,7 @@ export class ServerConfig extends Context.Service<
     readonly staticDir: string | undefined;
     readonly devUrl: URL | undefined;
     readonly devAuthToken?: Redacted.Redacted<string> | undefined;
-    readonly devModelProxy?: DevModelProxyOverride | undefined;
+    readonly devProxy?: DevProxyOverride | undefined;
     readonly devAllowedOrigins: ReadonlyArray<string>;
     readonly noBrowser: boolean;
     readonly startupPresentation: StartupPresentation;

@@ -193,13 +193,13 @@ const optionalTrimmedString = (name: string) =>
     Config.map(Option.getOrUndefined),
   );
 
-const DevModelProxyConfig = Config.all({
-  url: optionalTrimmedString("T3CODE_DEV_MODEL_PROXY_URL"),
-  apiKey: optionalTrimmedString("T3CODE_DEV_MODEL_PROXY_API_KEY").pipe(
+const DevProxyConfig = Config.all({
+  url: optionalTrimmedString("T3CODE_DEV_PROXY_URL"),
+  apiKey: optionalTrimmedString("T3CODE_DEV_PROXY_API_KEY").pipe(
     Config.map((value) => (value === undefined ? undefined : Redacted.make(value))),
   ),
 }).pipe(
-  Config.map(({ url, apiKey }): ServerConfig.DevModelProxyOverride | undefined =>
+  Config.map(({ url, apiKey }): ServerConfig.DevProxyOverride | undefined =>
     url === undefined && apiKey === undefined
       ? undefined
       : { ...(url === undefined ? {} : { url }), ...(apiKey === undefined ? {} : { apiKey }) },
@@ -336,7 +336,7 @@ export const resolveServerConfig = (
     );
     const devAuthToken =
       mode === "web" && devUrl !== undefined ? yield* DevAuthTokenConfig : undefined;
-    const devModelProxy = devUrl !== undefined ? yield* DevModelProxyConfig : undefined;
+    const devProxy = devUrl !== undefined ? yield* DevProxyConfig : undefined;
     const explicitBaseDir = resolveOptionPrecedence(
       normalizedFlags.baseDir,
       Option.fromUndefinedOr(env.t3Home),
@@ -483,7 +483,7 @@ export const resolveServerConfig = (
       staticDir,
       devUrl,
       ...(devAuthToken === undefined ? {} : { devAuthToken }),
-      ...(devModelProxy === undefined ? {} : { devModelProxy }),
+      ...(devProxy === undefined ? {} : { devProxy }),
       devAllowedOrigins: env.devAllowedOrigins,
       noBrowser,
       startupPresentation,

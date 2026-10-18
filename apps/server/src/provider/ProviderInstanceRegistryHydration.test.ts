@@ -71,7 +71,7 @@ describe("deriveProviderInstanceConfigMap", () => {
     expect(merged[instanceId]?.modelProxy).toBeUndefined();
   });
 
-  it("lets the dev override replace only the proxy fields it sets", () => {
+  it("lets the dev proxy URL and key replace only the fields they set", () => {
     const settings = settingsWith({
       modelProxy: { url: "http://saved.test:8317", apiKey: "saved-key" },
       providerInstances: {

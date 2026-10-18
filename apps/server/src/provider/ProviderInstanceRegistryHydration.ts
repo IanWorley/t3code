@@ -38,7 +38,7 @@ type ProviderInstanceRegistryHydrationEnv =
 
 export const deriveProviderInstanceConfigMap = (
   settings: ServerSettings,
-  devModelProxy?: ServerConfig.DevModelProxyOverride,
+  devProxy?: ServerConfig.DevProxyOverride,
 ): ProviderInstanceEntryMap => {
   const merged: Record<string, ProviderInstanceEntry> = { ...settings.providerInstances };
 
@@ -71,11 +71,9 @@ export const deriveProviderInstanceConfigMap = (
   }
 
   const modelProxy = {
-    url: devModelProxy?.url ?? settings.modelProxy.url,
+    url: devProxy?.url ?? settings.modelProxy.url,
     apiKey:
-      devModelProxy?.apiKey === undefined
-        ? settings.modelProxy.apiKey
-        : Redacted.value(devModelProxy.apiKey),
+      devProxy?.apiKey === undefined ? settings.modelProxy.apiKey : Redacted.value(devProxy.apiKey),
   };
   for (const [instanceId, entry] of Object.entries(merged)) {
     if (entry.useModelProxy === true) {
@@ -91,11 +89,11 @@ const layerSettingsWatcher = Layer.effectDiscard(
     const mutator = yield* ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator;
     const serverSettings = yield* Settings.ServerSettingsService;
     const settingsChanges = yield* serverSettings.subscribeChanges;
-    const { devModelProxy } = yield* ServerConfig.ServerConfig;
+    const { devProxy } = yield* ServerConfig.ServerConfig;
     yield* settingsChanges.pipe(
       Stream.runForEach((next) =>
         mutator
-          .reconcile(deriveProviderInstanceConfigMap(next, devModelProxy))
+          .reconcile(deriveProviderInstanceConfigMap(next, devProxy))
           .pipe(
             Effect.catchCause((cause) =>
               Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
@@ -117,17 +115,17 @@ export const layer: Layer.Layer<
     const initialSettings: ServerSettings | undefined = yield* serverSettings.getSettings.pipe(
       Effect.orElseSucceed(() => undefined),
     );
-    const { devModelProxy } = yield* ServerConfig.ServerConfig;
-    if (devModelProxy !== undefined) {
-      yield* Effect.logInfo("Model proxy settings are overridden by T3CODE_DEV_MODEL_PROXY_* env", {
-        url: devModelProxy.url,
-        apiKeyOverridden: devModelProxy.apiKey !== undefined,
+    const { devProxy } = yield* ServerConfig.ServerConfig;
+    if (devProxy !== undefined) {
+      yield* Effect.logInfo("Using the dev proxy URL from T3CODE_DEV_PROXY_* for the model proxy", {
+        url: devProxy.url,
+        apiKeyOverridden: devProxy.apiKey !== undefined,
       });
     }
     const initialConfigMap =
       initialSettings === undefined
         ? ({} as ProviderInstanceEntryMap)
-        : deriveProviderInstanceConfigMap(initialSettings, devModelProxy);
+        : deriveProviderInstanceConfigMap(initialSettings, devProxy);
 
     const layerMutable = ProviderInstanceRegistry.layer({
       drivers: BUILT_IN_DRIVERS,

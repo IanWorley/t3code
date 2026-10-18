@@ -185,10 +185,10 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     }),
   );
 
-  it.effect("reads the model proxy override only when running under the dev runner", () =>
+  it.effect("reads the dev proxy URL only when running under the dev runner", () =>
     Effect.gen(function* () {
       const baseDir = yield* FileSystem.FileSystem.pipe(
-        Effect.flatMap((fs) => fs.makeTempDirectoryScoped({ prefix: "t3-cli-dev-proxy-" })),
+        Effect.flatMap((fs) => fs.makeTempDirectoryScoped({ prefix: "t3-cli-dev-proxy-url-" })),
       );
       const flags = {
         mode: Option.some("web" as const),
@@ -208,8 +208,8 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         ConfigProvider.layer(
           ConfigProvider.fromEnv({
             env: {
-              T3CODE_DEV_MODEL_PROXY_URL: " http://127.0.0.1:9000 ",
-              T3CODE_DEV_MODEL_PROXY_API_KEY: "dev-proxy-key",
+              T3CODE_DEV_PROXY_URL: " http://127.0.0.1:9000 ",
+              T3CODE_DEV_PROXY_API_KEY: "dev-proxy-key",
             },
           }),
         ),
@@ -221,11 +221,9 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         Option.none(),
       ).pipe(Effect.provide(layers));
 
-      expect(dev.devModelProxy?.url).toBe("http://127.0.0.1:9000");
-      expect(dev.devModelProxy?.apiKey && Redacted.value(dev.devModelProxy.apiKey)).toBe(
-        "dev-proxy-key",
-      );
-      expect(production.devModelProxy).toBeUndefined();
+      expect(dev.devProxy?.url).toBe("http://127.0.0.1:9000");
+      expect(dev.devProxy?.apiKey && Redacted.value(dev.devProxy.apiKey)).toBe("dev-proxy-key");
+      expect(production.devProxy).toBeUndefined();
     }),
   );
 
