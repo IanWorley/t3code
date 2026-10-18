@@ -785,8 +785,7 @@ export function ProviderInstanceCard({
   });
 
   const useModelProxy = instance.useModelProxy === true;
-  // Managed Codex can't use the proxy, but an instance switched to managed keeps its way out.
-  const canUseModelProxy =
+  const showModelProxySwitch =
     instance.driver === "claudeAgent" ||
     (instance.driver === "codex" &&
       (readCodexSetupMode(instance.config) !== "managed" || useModelProxy));
@@ -1261,7 +1260,7 @@ export function ProviderInstanceCard({
         aria-disabled={readOnly || undefined}
         className={readOnly ? "opacity-50 select-none" : undefined}
       >
-        {canUseModelProxy ? (
+        {showModelProxySwitch ? (
           <SettingsRow
             title="Model proxy"
             description={describeModelProxyRouting(useModelProxy, liveProvider?.modelProxy?.status)}

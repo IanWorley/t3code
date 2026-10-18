@@ -17,9 +17,8 @@ import { resolveCodexLaunchArgs, T3CODE_CODEX_LAUNCH_ARGS_ENV } from "./codexLau
 const MODELS_PATH = "/v1/models";
 const PROBE_TIMEOUT_MS = 2_000;
 const PROXY_MODEL_SUB_PROVIDER = "Proxy";
-// Codex instances don't offer Claude models through the proxy; Claude has its own harness.
 const CLAUDE_MODEL_PREFIX = "claude-";
-const offeredToDriver = (driver: ProviderDriverKind, slug: string) =>
+const offersProxyModel = (driver: ProviderDriverKind, slug: string) =>
   driver !== "codex" || !slug.startsWith(CLAUDE_MODEL_PREFIX);
 const REASONING_LABEL = "Reasoning";
 const DEFAULT_REASONING = "medium";
@@ -65,8 +64,7 @@ const CODEX_PROVIDER_ID = "t3_model_proxy";
 const CODEX_API_KEY_ENV = "T3CODE_MODEL_PROXY_API_KEY";
 // Claude refuses to start without a credential, even for a proxy that accepts anonymous clients.
 const CLAUDE_PLACEHOLDER_TOKEN = "t3-model-proxy";
-// Backend selectors that would otherwise send Claude somewhere other than the proxy.
-const CLAUDE_COMPETING_ENVIRONMENT = [
+const CLAUDE_BACKEND_SELECTOR_ENV = [
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_AUTH_TOKEN",
   "ANTHROPIC_AWS_BASE_URL",
@@ -116,10 +114,6 @@ export function parseModelProxyUrl(value: string): string | null {
   }
 }
 
-/**
- * An opted-in instance with an unusable URL fails to build rather than quietly sending traffic
- * straight to OpenAI or Anthropic.
- */
 export const resolveModelProxyRoute = (input: {
   readonly driver: ProviderDriverKind;
   readonly instanceId: ProviderInstanceId;
@@ -154,7 +148,6 @@ export function modelProxyCodexEnvironment(
     set(`${provider}.wire_api`, "responses"),
     ...(route.apiKey ? [set(`${provider}.env_key`, CODEX_API_KEY_ENV)] : []),
   ];
-  // Every Codex spawn site prefers this variable over the configured launch args.
   return {
     ...environment,
     [T3CODE_CODEX_LAUNCH_ARGS_ENV]: [resolveCodexLaunchArgs(launchArgs, environment), ...overrides]
@@ -170,7 +163,7 @@ export function modelProxyClaudeEnvironment(
 ): NodeJS.ProcessEnv {
   if (route === undefined) return environment;
   const routed = { ...environment };
-  for (const name of CLAUDE_COMPETING_ENVIRONMENT) delete routed[name];
+  for (const name of CLAUDE_BACKEND_SELECTOR_ENV) delete routed[name];
   routed.ANTHROPIC_BASE_URL = route.rootUrl;
   routed.ANTHROPIC_AUTH_TOKEN = route.apiKey ?? CLAUDE_PLACEHOLDER_TOKEN;
   return routed;
@@ -221,7 +214,7 @@ export function applyModelProxyProbe(
 ): ServerProvider {
   const known = new Set(snapshot.models.map((model) => model.slug));
   const proxyModels = probe.models
-    .filter((slug) => !known.has(slug) && offeredToDriver(snapshot.driver, slug))
+    .filter((slug) => !known.has(slug) && offersProxyModel(snapshot.driver, slug))
     .map((slug): ServerProviderModel => ({
       slug,
       name: slug,
@@ -229,13 +222,12 @@ export function applyModelProxyProbe(
       isCustom: false,
       capabilities: PROXY_MODEL_CAPABILITIES_BY_DRIVER[snapshot.driver] ?? null,
     }));
-  // A harness problem is the more specific warning, so the proxy only fills in a ready snapshot.
-  const warn = probe.message !== undefined && snapshot.status === "ready";
+  const proxyWarning = probe.message !== undefined && snapshot.status === "ready";
   return {
     ...snapshot,
     models: [...snapshot.models, ...proxyModels],
     modelProxy: { status: probe.available ? "available" : "unavailable" },
-    ...(warn ? { status: "warning" as const, message: probe.message } : {}),
+    ...(proxyWarning ? { status: "warning" as const, message: probe.message } : {}),
   };
 }
 

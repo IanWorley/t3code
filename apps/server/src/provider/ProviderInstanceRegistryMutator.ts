@@ -12,10 +12,6 @@ import type {
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 
-/**
- * A configured instance as the registry builds it. The environment's model proxy is copied into
- * each instance that opted in, so changing the proxy rebuilds exactly those instances.
- */
 export type ProviderInstanceEntry = ProviderInstanceConfig & {
   readonly modelProxy?: ModelProxySettings;
 };

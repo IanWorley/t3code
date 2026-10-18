@@ -105,7 +105,6 @@ export interface ProviderDriverCreateInput<Config> {
   readonly displayName: string | undefined;
   readonly accentColor?: string | undefined;
   readonly environment: ProviderInstanceEnvironment;
-  // Set when the instance opted into the environment's model proxy.
   readonly modelProxy?: ModelProxySettings | undefined;
   readonly enabled: boolean;
   readonly config: Config;

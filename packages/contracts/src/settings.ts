@@ -874,7 +874,6 @@ export const DEFAULT_MODEL_PROXY_URL = "http://localhost:8317";
  */
 export const ModelProxySettings = Schema.Struct({
   url: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_MODEL_PROXY_URL))),
-  // The proxy's own client key, not an OpenAI or Anthropic credential.
   apiKey: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed("")), secretSetting),
 });
 export type ModelProxySettings = typeof ModelProxySettings.Type;

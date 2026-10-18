@@ -199,7 +199,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
           config,
         },
         {
-          processEnvironment: processEnv,
+          resolvedEnvironment: processEnv,
           onUsageLimits: (update) => snapshot.applyUsageLimits(update),
         },
       ).pipe(

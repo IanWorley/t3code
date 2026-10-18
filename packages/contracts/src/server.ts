@@ -279,7 +279,6 @@ export const ServerProvider = Schema.Struct({
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   compatibilityAdvisory: Schema.optionalKey(ServerProviderCompatibilityAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
-  // Present while this instance routes its model traffic through the model proxy.
   modelProxy: Schema.optionalKey(ServerProviderModelProxyStatus),
 });
 export type ServerProvider = typeof ServerProvider.Type;

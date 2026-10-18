@@ -25,7 +25,6 @@ export function ModelProxySettingsSection({
   readonly readOnly: boolean;
 }) {
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
-  // A saved key arrives redacted, so any value means one is stored.
   const keyConfigured = modelProxy.apiKey.length > 0;
   const controlClassName = cn(
     "flex w-full min-w-0 items-center gap-2 @min-[32rem]/settings-row:w-auto",

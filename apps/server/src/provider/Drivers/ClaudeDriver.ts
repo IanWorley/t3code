@@ -182,7 +182,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
           config,
         },
         {
-          processEnvironment: processEnv,
+          resolvedEnvironment: processEnv,
           scopedLimitNames,
           onUsageLimits: (update) => snapshot.applyUsageLimits(update),
         },

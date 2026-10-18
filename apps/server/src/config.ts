@@ -46,11 +46,6 @@ export interface DeriveServerPathsOptions {
   readonly baseDirIsExplicit?: boolean;
 }
 
-/**
- * `T3CODE_DEV_PROXY_URL` / `T3CODE_DEV_PROXY_API_KEY`: a dev-runner-only stand-in for the saved
- * model proxy, so a worktree can test routing without touching settings. Unrelated to Vite's
- * `/api` dev proxy, and production servers never read it.
- */
 export interface DevProxyOverride {
   readonly url?: string;
   readonly apiKey?: Redacted.Redacted<string>;

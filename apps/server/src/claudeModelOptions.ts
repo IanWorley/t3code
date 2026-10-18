@@ -17,9 +17,7 @@ import {
   type ClaudeModelCatalog,
 } from "./provider/ClaudeModelCatalog.ts";
 
-// The Agent SDK's effort levels. A model outside the catalog (custom or served by the model proxy)
-// has no descriptor to check a selection against, so one of these passes through unchanged.
-const CLAUDE_SDK_EFFORT_LEVELS: ReadonlySet<string> = new Set([
+const NON_CATALOG_MODEL_EFFORT_LEVELS: ReadonlySet<string> = new Set([
   "low",
   "medium",
   "high",
@@ -47,7 +45,7 @@ export function compileClaudeModelSelection(
   const resolvedEffort = resolveClaudeCatalogEffort(catalog, selection.model, rawEffort);
   const effort = isClaudeCatalogModel(catalog, selection.model)
     ? normalizeClaudeCatalogEffort(catalog, resolvedEffort, selection.model)
-    : rawEffort !== undefined && CLAUDE_SDK_EFFORT_LEVELS.has(rawEffort)
+    : rawEffort !== undefined && NON_CATALOG_MODEL_EFFORT_LEVELS.has(rawEffort)
       ? rawEffort
       : undefined;
   const fastMode = supportsBoolean("fastMode")

@@ -9139,8 +9139,7 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
   function* (
     input: ProviderAdapterDriverCreateInput<ClaudeSettings>,
     hooks: Pick<ClaudeAdapterV2Options, "scopedLimitNames" | "onUsageLimits"> & {
-      // The driver's resolved environment, when it differs from the instance's own.
-      readonly processEnvironment?: NodeJS.ProcessEnv;
+      readonly resolvedEnvironment?: NodeJS.ProcessEnv;
     } = {},
   ) {
     const { instanceId, environment, enabled, config } = input;
@@ -9151,7 +9150,7 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
     const serverConfig = yield* ServerConfig.ServerConfig;
     const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
     const baseEnvironment =
-      hooks.processEnvironment ??
+      hooks.resolvedEnvironment ??
       (yield* mergeProviderInstanceEnvironment(environment, hostEnvironment));
     const claudeEnvironment = yield* makeClaudeEnvironment(config, baseEnvironment);
     const path = yield* Path.Path;
