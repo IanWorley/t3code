@@ -108,7 +108,9 @@ export function parseModelProxyUrl(value: string): string | null {
       url.password === "" &&
       url.search === "" &&
       url.hash === "";
-    return plainHttp ? `${url.origin}${url.pathname.replace(/\/+$/u, "")}` : null;
+    // The URL is embedded in a single-quoted Codex `-c` argument, and WHATWG URLs keep `'` raw.
+    const path = url.pathname.replace(/\/+$/u, "").replaceAll("'", "%27");
+    return plainHttp ? `${url.origin}${path}` : null;
   } catch {
     return null;
   }

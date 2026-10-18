@@ -3,6 +3,7 @@ import {
   getModelSelectionBooleanOptionValue,
   getModelSelectionStringOptionValue,
   getProviderOptionDescriptors,
+  readCustomModelEntries,
   resolvePromptInjectedEffort,
 } from "@t3tools/shared/model";
 
@@ -17,7 +18,7 @@ import {
   type ClaudeModelCatalog,
 } from "./provider/ClaudeModelCatalog.ts";
 
-const NON_CATALOG_MODEL_EFFORT_LEVELS: ReadonlySet<string> = new Set([
+const PROXY_ONLY_MODEL_EFFORT_LEVELS: ReadonlySet<string> = new Set([
   "low",
   "medium",
   "high",
@@ -36,6 +37,7 @@ export interface CompiledClaudeModelSelection {
 export function compileClaudeModelSelection(
   selection: ModelSelection,
   catalog: ClaudeModelCatalog = BUNDLED_CLAUDE_MODEL_CATALOG,
+  customModels: unknown = [],
 ): CompiledClaudeModelSelection {
   const capabilities = getClaudeCatalogModelCapabilities(catalog, selection.model);
   const descriptors = getProviderOptionDescriptors({ caps: capabilities });
@@ -43,9 +45,12 @@ export function compileClaudeModelSelection(
     descriptors.some((descriptor) => descriptor.type === "boolean" && descriptor.id === id);
   const rawEffort = getModelSelectionStringOptionValue(selection, "effort");
   const resolvedEffort = resolveClaudeCatalogEffort(catalog, selection.model, rawEffort);
-  const effort = isClaudeCatalogModel(catalog, selection.model)
+  const isProxyOnlyModel =
+    !isClaudeCatalogModel(catalog, selection.model) &&
+    !readCustomModelEntries(customModels).some((entry) => entry.slug === selection.model);
+  const effort = !isProxyOnlyModel
     ? normalizeClaudeCatalogEffort(catalog, resolvedEffort, selection.model)
-    : rawEffort !== undefined && NON_CATALOG_MODEL_EFFORT_LEVELS.has(rawEffort)
+    : rawEffort !== undefined && PROXY_ONLY_MODEL_EFFORT_LEVELS.has(rawEffort)
       ? rawEffort
       : undefined;
   const fastMode = supportsBoolean("fastMode")

@@ -1,3 +1,4 @@
+import { compileClaudeModelSelection } from "../claudeModelOptions.ts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -22,7 +23,6 @@ import {
   type ClaudeModelCatalog,
   getClaudeCatalogModelCapabilities,
   isClaudeCatalogUltracodeEffort,
-  normalizeClaudeCatalogEffort,
   resolveClaudeCatalogApiModelId,
   resolveClaudeCatalogEffort,
   resolveClaudeModelSlug,
@@ -159,11 +159,11 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       resolvedModelSelection.model,
       rawEffortSelection,
     );
-    const cliEffort = normalizeClaudeCatalogEffort(
+    const cliEffort = compileClaudeModelSelection(
+      resolvedModelSelection,
       catalog,
-      resolvedEffort,
-      resolvedModelSelection.model,
-    );
+      claudeSettings.customModels,
+    ).effort;
     const ultracode = isClaudeCatalogUltracodeEffort(resolvedEffort);
     const thinkingDescriptor = findDescriptor("thinking");
     const fastModeDescriptor = findDescriptor("fastMode");

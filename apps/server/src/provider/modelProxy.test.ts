@@ -3,10 +3,12 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import { describe, expect, it } from "@effect/vitest";
 
+import { codexExecLaunchArgs } from "./codexLaunchArgs.ts";
 import {
   applyModelProxyProbe,
   modelProxyClaudeEnvironment,
   modelProxyCodexEnvironment,
+  parseModelProxyUrl,
   resolveModelProxyRoute,
 } from "./modelProxy.ts";
 
@@ -65,6 +67,17 @@ describe("modelProxyCodexEnvironment", () => {
       ].join(" "),
     );
     expect(env.T3CODE_MODEL_PROXY_API_KEY).toBe("proxy-key");
+  });
+});
+
+describe("parseModelProxyUrl", () => {
+  it("keeps an apostrophe in the path from breaking the Codex launch args", () => {
+    const rootUrl = parseModelProxyUrl("http://proxy.test/O'Brien");
+    expect(rootUrl).not.toBeNull();
+    const env = modelProxyCodexEnvironment({}, undefined, { rootUrl: rootUrl!, apiKey: undefined });
+    expect(codexExecLaunchArgs(env.T3CODE_CODEX_LAUNCH_ARGS)).toContain(
+      'model_providers.t3_model_proxy.base_url="http://proxy.test/O%27Brien/v1"',
+    );
   });
 });
 
