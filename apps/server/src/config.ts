@@ -46,6 +46,15 @@ export interface DeriveServerPathsOptions {
   readonly baseDirIsExplicit?: boolean;
 }
 
+/**
+ * Dev-runner-only stand-in for the saved model proxy, so a worktree can test routing without
+ * touching settings. Production servers never read it.
+ */
+export interface DevModelProxyOverride {
+  readonly url?: string;
+  readonly apiKey?: Redacted.Redacted<string>;
+}
+
 export class ServerConfig extends Context.Service<
   ServerConfig,
   ServerDerivedPaths & {
@@ -70,6 +79,7 @@ export class ServerConfig extends Context.Service<
     readonly staticDir: string | undefined;
     readonly devUrl: URL | undefined;
     readonly devAuthToken?: Redacted.Redacted<string> | undefined;
+    readonly devModelProxy?: DevModelProxyOverride | undefined;
     readonly devAllowedOrigins: ReadonlyArray<string>;
     readonly noBrowser: boolean;
     readonly startupPresentation: StartupPresentation;

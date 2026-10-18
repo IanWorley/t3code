@@ -185,6 +185,50 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     }),
   );
 
+  it.effect("reads the model proxy override only when running under the dev runner", () =>
+    Effect.gen(function* () {
+      const baseDir = yield* FileSystem.FileSystem.pipe(
+        Effect.flatMap((fs) => fs.makeTempDirectoryScoped({ prefix: "t3-cli-dev-proxy-" })),
+      );
+      const flags = {
+        mode: Option.some("web" as const),
+        port: Option.some(8788),
+        host: Option.none<string>(),
+        baseDir: Option.some(baseDir),
+        cwd: Option.none<string>(),
+        devUrl: Option.some(new URL("http://127.0.0.1:5173")),
+        noBrowser: Option.none<boolean>(),
+        bootstrapFd: Option.none<number>(),
+        autoBootstrapProjectFromCwd: Option.none<boolean>(),
+        logWebSocketEvents: Option.none<boolean>(),
+        tailscaleServeEnabled: Option.none<boolean>(),
+        tailscaleServePort: Option.none<number>(),
+      };
+      const layers = Layer.mergeAll(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({
+            env: {
+              T3CODE_DEV_MODEL_PROXY_URL: " http://127.0.0.1:9000 ",
+              T3CODE_DEV_MODEL_PROXY_API_KEY: "dev-proxy-key",
+            },
+          }),
+        ),
+        NetService.layer,
+      );
+      const dev = yield* resolveServerConfig(flags, Option.none()).pipe(Effect.provide(layers));
+      const production = yield* resolveServerConfig(
+        { ...flags, devUrl: Option.none() },
+        Option.none(),
+      ).pipe(Effect.provide(layers));
+
+      expect(dev.devModelProxy?.url).toBe("http://127.0.0.1:9000");
+      expect(dev.devModelProxy?.apiKey && Redacted.value(dev.devModelProxy.apiKey)).toBe(
+        "dev-proxy-key",
+      );
+      expect(production.devModelProxy).toBeUndefined();
+    }),
+  );
+
   it.effect("does not expose an invalid reusable auth token", () =>
     Effect.gen(function* () {
       const secret = "short-secret";

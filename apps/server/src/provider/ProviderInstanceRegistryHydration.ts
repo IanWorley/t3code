@@ -7,6 +7,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import * as Stream from "effect/Stream";
 
 import * as Settings from "../serverSettings.ts";
@@ -22,7 +23,7 @@ import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRe
 import * as ProviderHostLive from "./ProviderHostLive.ts";
 import type * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import type * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
-import type * as ServerConfig from "../config.ts";
+import * as ServerConfig from "../config.ts";
 
 type ProviderInstanceRegistryHydrationEnv =
   | Exclude<
@@ -37,6 +38,7 @@ type ProviderInstanceRegistryHydrationEnv =
 
 export const deriveProviderInstanceConfigMap = (
   settings: ServerSettings,
+  devModelProxy?: ServerConfig.DevModelProxyOverride,
 ): ProviderInstanceEntryMap => {
   const merged: Record<string, ProviderInstanceEntry> = { ...settings.providerInstances };
 
@@ -68,9 +70,16 @@ export const deriveProviderInstanceConfigMap = (
     }
   }
 
+  const modelProxy = {
+    url: devModelProxy?.url ?? settings.modelProxy.url,
+    apiKey:
+      devModelProxy?.apiKey === undefined
+        ? settings.modelProxy.apiKey
+        : Redacted.value(devModelProxy.apiKey),
+  };
   for (const [instanceId, entry] of Object.entries(merged)) {
     if (entry.useModelProxy === true) {
-      merged[instanceId] = { ...entry, modelProxy: settings.modelProxy };
+      merged[instanceId] = { ...entry, modelProxy };
     }
   }
 
@@ -82,10 +91,11 @@ const layerSettingsWatcher = Layer.effectDiscard(
     const mutator = yield* ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator;
     const serverSettings = yield* Settings.ServerSettingsService;
     const settingsChanges = yield* serverSettings.subscribeChanges;
+    const { devModelProxy } = yield* ServerConfig.ServerConfig;
     yield* settingsChanges.pipe(
       Stream.runForEach((next) =>
         mutator
-          .reconcile(deriveProviderInstanceConfigMap(next))
+          .reconcile(deriveProviderInstanceConfigMap(next, devModelProxy))
           .pipe(
             Effect.catchCause((cause) =>
               Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
@@ -107,10 +117,17 @@ export const layer: Layer.Layer<
     const initialSettings: ServerSettings | undefined = yield* serverSettings.getSettings.pipe(
       Effect.orElseSucceed(() => undefined),
     );
+    const { devModelProxy } = yield* ServerConfig.ServerConfig;
+    if (devModelProxy !== undefined) {
+      yield* Effect.logInfo("Model proxy settings are overridden by T3CODE_DEV_MODEL_PROXY_* env", {
+        url: devModelProxy.url,
+        apiKeyOverridden: devModelProxy.apiKey !== undefined,
+      });
+    }
     const initialConfigMap =
       initialSettings === undefined
         ? ({} as ProviderInstanceEntryMap)
-        : deriveProviderInstanceConfigMap(initialSettings);
+        : deriveProviderInstanceConfigMap(initialSettings, devModelProxy);
 
     const layerMutable = ProviderInstanceRegistry.layer({
       drivers: BUILT_IN_DRIVERS,

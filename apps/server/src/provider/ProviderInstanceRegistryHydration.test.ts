@@ -71,6 +71,22 @@ describe("deriveProviderInstanceConfigMap", () => {
     expect(merged[instanceId]?.modelProxy).toBeUndefined();
   });
 
+  it("lets the dev override replace only the proxy fields it sets", () => {
+    const settings = settingsWith({
+      modelProxy: { url: "http://saved.test:8317", apiKey: "saved-key" },
+      providerInstances: {
+        [instanceId]: { driver: ProviderDriverKind.make("codex"), useModelProxy: true },
+      },
+    });
+
+    const merged = deriveProviderInstanceConfigMap(settings, { url: "http://dev.test:9000" });
+
+    expect(merged[instanceId]?.modelProxy).toEqual({
+      url: "http://dev.test:9000",
+      apiKey: "saved-key",
+    });
+  });
+
   it("leaves an already machine-enabled instance untouched", () => {
     const settings = settingsWith({
       providerInstances: {
