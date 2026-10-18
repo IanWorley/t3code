@@ -72,15 +72,28 @@ describe("applyModelProxyProbe", () => {
   it("adds proxy-only models without duplicating harness models", () => {
     const next = applyModelProxyProbe(readySnapshot, {
       available: true,
-      models: ["gpt-5.5", "claude-sonnet-5"],
+      models: ["gpt-5.5", "gpt-6.1-sol"],
     });
     expect(next.models.map((model) => [model.slug, model.subProvider])).toEqual([
       ["gpt-5.5", undefined],
-      ["claude-sonnet-5", "Proxy"],
+      ["gpt-6.1-sol", "Proxy"],
     ]);
     expect(next.models[1]?.capabilities?.optionDescriptors?.[0]?.id).toBe("reasoningEffort");
     expect(next.status).toBe("ready");
     expect(next.modelProxy).toEqual({ status: "available" });
+  });
+
+  it("keeps Claude models off Codex but offers GPT models to Claude", () => {
+    const probe = { available: true, models: ["claude-sonnet-5", "gpt-6.1-sol"] };
+    const proxySlugs = (snapshot: ServerProvider) =>
+      applyModelProxyProbe(snapshot, probe)
+        .models.filter((model) => model.subProvider === "Proxy")
+        .map((model) => model.slug);
+
+    expect(proxySlugs(readySnapshot)).toEqual(["gpt-6.1-sol"]);
+    expect(
+      proxySlugs({ ...readySnapshot, driver: ProviderDriverKind.make("claudeAgent") }),
+    ).toEqual(["claude-sonnet-5", "gpt-6.1-sol"]);
   });
 
   it("warns on a ready instance when the proxy is unavailable", () => {

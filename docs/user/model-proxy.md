@@ -24,8 +24,9 @@ Codex installation first.
 ## Models
 
 Models the proxy offers beyond the provider's own list appear in the model picker labelled
-**Proxy**. Hide any you don't want from the provider's **Models** section. Routed providers show a
-route icon in the model picker.
+**Proxy**, with a **Reasoning** option. Codex providers don't list the proxy's Claude models; use a
+Claude provider for those. Hide any you don't want from the provider's **Models** section. Routed
+providers show a route icon in the model picker.
 
 If the proxy is stopped or rejects T3 Code, the provider shows a warning and its requests fail. T3
 Code never falls back to sending them directly to OpenAI or Anthropic.

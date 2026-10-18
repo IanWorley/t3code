@@ -17,6 +17,10 @@ import { resolveCodexLaunchArgs, T3CODE_CODEX_LAUNCH_ARGS_ENV } from "./codexLau
 const MODELS_PATH = "/v1/models";
 const PROBE_TIMEOUT_MS = 2_000;
 const PROXY_MODEL_SUB_PROVIDER = "Proxy";
+// Codex instances don't offer Claude models through the proxy; Claude has its own harness.
+const CLAUDE_MODEL_PREFIX = "claude-";
+const offeredToDriver = (driver: ProviderDriverKind, slug: string) =>
+  driver !== "codex" || !slug.startsWith(CLAUDE_MODEL_PREFIX);
 const REASONING_LABEL = "Reasoning";
 const DEFAULT_REASONING = "medium";
 const reasoningChoices = (levels: ReadonlyArray<readonly [id: string, label: string]>) =>
@@ -217,7 +221,7 @@ export function applyModelProxyProbe(
 ): ServerProvider {
   const known = new Set(snapshot.models.map((model) => model.slug));
   const proxyModels = probe.models
-    .filter((slug) => !known.has(slug))
+    .filter((slug) => !known.has(slug) && offeredToDriver(snapshot.driver, slug))
     .map((slug): ServerProviderModel => ({
       slug,
       name: slug,
