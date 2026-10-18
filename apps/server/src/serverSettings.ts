@@ -1,4 +1,5 @@
 import {
+  DEFAULT_MODEL_PROXY_URL,
   DEFAULT_SERVER_SETTINGS,
   ModelSelection,
   ProjectId,
@@ -15,6 +16,7 @@ import {
   ServerSettings,
   ServerSettingsError,
   type ServerSettingsPatch,
+  TrimmedString,
 } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -298,9 +300,49 @@ const LegacyProviderSettingsJson = fromLenientJson(
     providers: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
     bitbucket: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
     github: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
+    vibeProxy: Schema.optionalKey(Schema.Unknown),
+    providerInstances: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
   }),
 );
 const decodeLegacyProviderSettingsJsonExit = Schema.decodeUnknownExit(LegacyProviderSettingsJson);
+
+const decodeLegacyVibeProxyUrl = Schema.decodeUnknownOption(Schema.Struct({ url: TrimmedString }));
+const decodeLegacyVibeProxyOptIn = Schema.decodeUnknownOption(
+  Schema.Struct({ vibeProxy: Schema.Struct({ enabled: Schema.Literal(true) }) }),
+);
+
+interface LegacyVibeProxySettings {
+  readonly vibeProxy?: unknown;
+  readonly providerInstances?: Readonly<Record<string, unknown>> | undefined;
+}
+
+const hasLegacyVibeProxySettings = (legacy: LegacyVibeProxySettings) =>
+  legacy.vibeProxy !== undefined ||
+  Object.values(legacy.providerInstances ?? {}).some(
+    (entry) => typeof entry === "object" && entry !== null && "vibeProxy" in entry,
+  );
+
+// The old VibeProxy client key is not carried over; the user enters it again.
+function migrateLegacyVibeProxySettings(
+  settings: ServerSettings,
+  legacy: LegacyVibeProxySettings,
+): ServerSettings {
+  const url = Option.getOrUndefined(decodeLegacyVibeProxyUrl(legacy.vibeProxy))?.url;
+  const providerInstances = { ...settings.providerInstances };
+  for (const [rawInstanceId, entry] of Object.entries(legacy.providerInstances ?? {})) {
+    const instanceId = ProviderInstanceId.make(rawInstanceId);
+    const instance = providerInstances[instanceId];
+    if (instance === undefined || instance.useModelProxy !== undefined) continue;
+    if (Option.isNone(decodeLegacyVibeProxyOptIn(entry))) continue;
+    providerInstances[instanceId] = { ...instance, useModelProxy: true };
+  }
+  const keepsDefaultUrl = settings.modelProxy.url === DEFAULT_MODEL_PROXY_URL;
+  return {
+    ...settings,
+    providerInstances,
+    ...(url && keepsDefaultUrl ? { modelProxy: { ...settings.modelProxy, url } } : {}),
+  };
+}
 
 const LEGACY_BITBUCKET_SECRET_NAMES: Readonly<Record<string, string>> = {
   accessToken: "bitbucket-access-token",
@@ -658,6 +700,7 @@ const make = Effect.gen(function* () {
     let settings = DEFAULT_SERVER_SETTINGS;
     let legacyProviders: Readonly<Record<string, unknown>> | undefined;
     let legacySourceControl: Parameters<typeof migrateLegacySourceControlSettings>[1] = {};
+    let legacyVibeProxy: LegacyVibeProxySettings = {};
     // A file that failed to decode must stay on disk for the user to repair;
     // the fold below only writes when it started from the file's real contents.
     let settingsFileTrusted = true;
@@ -671,6 +714,10 @@ const make = Effect.gen(function* () {
         legacySourceControl = {
           bitbucket: legacySettings.value.bitbucket,
           github: legacySettings.value.github,
+        };
+        legacyVibeProxy = {
+          vibeProxy: legacySettings.value.vibeProxy,
+          providerInstances: legacySettings.value.providerInstances,
         };
       }
       if (decoded._tag === "Failure" || legacySettings._tag === "Failure") {
@@ -739,10 +786,15 @@ const make = Effect.gen(function* () {
             ),
           );
 
-    const loaded = foldProviderInstanceEnabledFlags(
+    const hasLegacyVibeProxy = settingsFileTrusted && hasLegacyVibeProxySettings(legacyVibeProxy);
+    const withProviders =
       legacyProviders === undefined
         ? settings
-        : migrateLegacyProviderSettings(settings, legacyProviders, providerHistory),
+        : migrateLegacyProviderSettings(settings, legacyProviders, providerHistory);
+    const loaded = foldProviderInstanceEnabledFlags(
+      hasLegacyVibeProxy
+        ? migrateLegacyVibeProxySettings(withProviders, legacyVibeProxy)
+        : withProviders,
     );
     const folded = settingsFileTrusted
       ? foldLegacyProjectSettings(loaded, legacyProjectRows)
@@ -780,7 +832,8 @@ const make = Effect.gen(function* () {
     if (
       migrated !== loaded ||
       (settingsFileTrusted && legacyProviders !== undefined) ||
-      hasLegacySourceControl
+      hasLegacySourceControl ||
+      hasLegacyVibeProxy
     ) {
       yield* writeSettingsAtomically(migrated);
       for (const move of sourceControlMigration.secretMoves) {

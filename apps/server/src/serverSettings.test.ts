@@ -180,6 +180,32 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       }),
     ).pipe(Effect.provide(layerServerSettings())),
   );
+  it.effect("carries saved VibeProxy routing over to the model proxy", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fs.writeFileString(
+        config.settingsPath,
+        `{
+          "vibeProxy": { "url": "http://proxy.test:9000", "apiKey": { "valueRedacted": true } },
+          "providerInstances": {
+            "codex": { "driver": "codex", "vibeProxy": { "enabled": true } },
+            "claudeAgent": { "driver": "claudeAgent", "vibeProxy": { "enabled": false } }
+          }
+        }`,
+      );
+
+      const settings = yield* service.getSettings;
+      assert.equal(settings.modelProxy.url, "http://proxy.test:9000");
+      assert.isTrue(settings.providerInstances[ProviderInstanceId.make("codex")]?.useModelProxy);
+      assert.isUndefined(
+        settings.providerInstances[ProviderInstanceId.make("claudeAgent")]?.useModelProxy,
+      );
+      assert.notInclude(yield* fs.readFileString(config.settingsPath), "vibeProxy");
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("migrates saved token delivery to paragraph buffering without resetting settings", () =>
     Effect.gen(function* () {
       const config = yield* ServerConfig.ServerConfig;
