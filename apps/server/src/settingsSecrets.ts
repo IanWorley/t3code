@@ -2,6 +2,7 @@ import {
   AntigravitySettings,
   ClaudeSettings,
   CodexSettings,
+  ModelProxySettings,
   type ServerSettings,
   UsageLimitSourceConfig,
   secretSettingsFields,
@@ -31,6 +32,7 @@ const providerSecretFields = new Map([
   ),
 ]);
 const usageLimitSecretFields = secretSettingsFields(UsageLimitSourceConfig);
+const modelProxySecretFields = secretSettingsFields(ModelProxySettings);
 const encode = (value: string) => Buffer.from(value, "utf8").toString("base64url");
 
 export interface SettingsSecret {
@@ -142,5 +144,11 @@ export function mapSettingsSecrets(
     ]),
   ) as ServerSettings["usageLimitSources"];
 
-  return { ...settings, providerInstances, sourceControlHosts, usageLimitSources };
+  const modelProxy = mapFields(
+    settings.modelProxy,
+    modelProxySecretFields,
+    (field) => `model-proxy-${encode(field)}`,
+  ) as ServerSettings["modelProxy"];
+
+  return { ...settings, providerInstances, sourceControlHosts, usageLimitSources, modelProxy };
 }

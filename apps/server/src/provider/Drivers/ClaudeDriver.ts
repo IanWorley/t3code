@@ -34,6 +34,12 @@ import { makeManagedServerProvider } from "@t3tools/provider-core/server/managed
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
 import { resolveClaudeModelCatalog } from "../ClaudeModelCatalog.ts";
 import {
+  modelProxyClaudeEnvironment,
+  resolveModelProxyRoute,
+  withModelProxyPending,
+  withModelProxyProbe,
+} from "../modelProxy.ts";
+import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
   type ProviderInstance,
@@ -104,7 +110,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
   configSchema: ClaudeSettings,
   defaultConfig: (): ClaudeSettings => decodeClaudeSettings({}),
   usage: claudeUsageReader,
-  create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
+  create: ({ instanceId, displayName, accentColor, environment, modelProxy, enabled, config }) =>
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const fileSystem = yield* FileSystem.FileSystem;
@@ -119,7 +125,15 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       const modelCatalog = catalogService
         .current(DRIVER_KIND)
         .pipe(Effect.map(resolveClaudeModelCatalog));
-      const processEnv = yield* mergeProviderInstanceEnvironment(environment);
+      const proxyRoute = yield* resolveModelProxyRoute({
+        driver: DRIVER_KIND,
+        instanceId,
+        settings: modelProxy,
+      });
+      const processEnv = modelProxyClaudeEnvironment(
+        yield* mergeProviderInstanceEnvironment(environment),
+        proxyRoute,
+      );
       const fallbackContinuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
         instanceId,
@@ -167,7 +181,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
           enabled,
           config,
         },
-        { scopedLimitNames, onUsageLimits: (update) => snapshot.applyUsageLimits(update) },
+        {
+          processEnvironment: processEnv,
+          scopedLimitNames,
+          onUsageLimits: (update) => snapshot.applyUsageLimits(update),
+        },
       ).pipe(
         Effect.mapError(
           (cause) =>
@@ -242,11 +260,14 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         streamSettings: snapshotSettings.streamSettings,
         haveSettingsChanged: haveProviderSnapshotSettingsChanged,
         initialSnapshot: (settings) =>
-          modelCatalog.pipe(
-            Effect.flatMap((catalog) => makePendingClaudeProvider(settings.provider, catalog)),
-            Effect.map(stampIdentity),
+          withModelProxyPending(
+            proxyRoute,
+            modelCatalog.pipe(
+              Effect.flatMap((catalog) => makePendingClaudeProvider(settings.provider, catalog)),
+              Effect.map(stampIdentity),
+            ),
           ),
-        checkProvider,
+        checkProvider: withModelProxyProbe(proxyRoute, httpClient, checkProvider),
         enrichSnapshot: ({ settings, snapshot, publishSnapshot }) =>
           resolveMaintenance().pipe(
             Effect.flatMap((maintenanceCapabilities) =>

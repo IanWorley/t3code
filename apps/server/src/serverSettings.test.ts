@@ -1730,6 +1730,31 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect("keeps the model proxy key in the secret store across URL edits", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+
+      yield* serverSettings.updateSettings({ modelProxy: { apiKey: "proxy-key" } });
+      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+      assert.notInclude(raw, "proxy-key");
+
+      const moved = yield* serverSettings.updateSettings({
+        modelProxy: { url: "https://proxy.example.test" },
+      });
+      assert.deepEqual(moved.modelProxy, {
+        url: "https://proxy.example.test",
+        apiKey: "proxy-key",
+      });
+      const forClient = ServerSettingsModule.redactServerSettingsForClient(moved).modelProxy;
+      assert.notInclude(forClient.apiKey, "proxy-key");
+
+      const cleared = yield* serverSettings.updateSettings({ modelProxy: { apiKey: "" } });
+      assert.equal(cleared.modelProxy.apiKey, "");
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect(
     "keeps source control host secrets in the secret store and tells clients only that one is set",
     () =>

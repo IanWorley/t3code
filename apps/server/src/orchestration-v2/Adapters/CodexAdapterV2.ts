@@ -1566,7 +1566,10 @@ export type CodexAdapterV2DriverEnv =
 
 export const createCodexAdapterV2 = (
   { instanceId, environment, enabled, config }: ProviderAdapterDriverCreateInput<CodexSettings>,
-  hooks: Pick<CodexAdapterV2Options, "onUsageLimits" | "resolveRuntime"> = {},
+  hooks: Pick<CodexAdapterV2Options, "onUsageLimits" | "resolveRuntime"> & {
+    // The driver's resolved environment, when it differs from the instance's own.
+    readonly processEnvironment?: NodeJS.ProcessEnv;
+  } = {},
 ) =>
   Effect.gen(function* () {
     const clientFactory = yield* CodexAppServerClientFactory;
@@ -1600,7 +1603,9 @@ export const createCodexAdapterV2 = (
     return yield* makeCodexAdapterV2({
       instanceId,
       settings,
-      environment: yield* mergeProviderInstanceEnvironment(environment, hostEnvironment),
+      environment:
+        hooks.processEnvironment ??
+        (yield* mergeProviderInstanceEnvironment(environment, hostEnvironment)),
       clientFactory,
       crypto,
       fileSystem,

@@ -26,6 +26,12 @@ import {
   withCodexAppServerClient,
 } from "../CodexProvider.ts";
 import { resolveCodexLaunchArgs } from "../codexLaunchArgs.ts";
+import {
+  modelProxyCodexEnvironment,
+  resolveModelProxyRoute,
+  withModelProxyPending,
+  withModelProxyProbe,
+} from "../modelProxy.ts";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
 import { applyCodexModelCatalog } from "../codexModelCatalog.ts";
@@ -106,8 +112,16 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
   configSchema: CodexSettings,
   defaultConfig: (): CodexSettings => decodeCodexSettings({}),
   usage: codexUsageReader,
-  create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
+  create: ({ instanceId, displayName, accentColor, environment, modelProxy, enabled, config }) =>
     Effect.gen(function* () {
+      if (config.setupMode === "managed" && modelProxy !== undefined) {
+        return yield* new ProviderDriverError({
+          driver: DRIVER_KIND,
+          instanceId,
+          detail:
+            "The model proxy needs an existing Codex CLI. Switch this instance's setup mode or stop routing it through the proxy.",
+        });
+      }
       if (config.setupMode === "managed")
         return yield* makeManagedCodexProvider({
           instanceId,
@@ -125,7 +139,16 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
       const latestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
       const modelCatalog = yield* ModelCatalog.ModelCatalog;
       const currentCatalog = modelCatalog.current(DRIVER_KIND);
-      const processEnv = yield* mergeProviderInstanceEnvironment(environment);
+      const proxyRoute = yield* resolveModelProxyRoute({
+        driver: DRIVER_KIND,
+        instanceId,
+        settings: modelProxy,
+      });
+      const processEnv = modelProxyCodexEnvironment(
+        yield* mergeProviderInstanceEnvironment(environment),
+        config.launchArgs,
+        proxyRoute,
+      );
       const homeLayout = yield* resolveCodexHomeLayout(config);
       const continuationIdentity = codexContinuationIdentity(homeLayout);
       const stampIdentity = withInstanceIdentity({
@@ -175,7 +198,10 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
           enabled,
           config,
         },
-        { onUsageLimits: (update) => snapshot.applyUsageLimits(update) },
+        {
+          processEnvironment: processEnv,
+          onUsageLimits: (update) => snapshot.applyUsageLimits(update),
+        },
       ).pipe(
         Effect.mapError(
           (cause) =>
@@ -210,12 +236,15 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
         streamSettings: snapshotSettings.streamSettings,
         haveSettingsChanged: haveProviderSnapshotSettingsChanged,
         initialSnapshot: (settings) =>
-          Effect.zipWith(
-            makePendingCodexProvider(settings.provider),
-            currentCatalog,
-            (draft, catalog) => stampIdentity(applyCodexModelCatalog(draft, catalog)),
+          withModelProxyPending(
+            proxyRoute,
+            Effect.zipWith(
+              makePendingCodexProvider(settings.provider),
+              currentCatalog,
+              (draft, catalog) => stampIdentity(applyCodexModelCatalog(draft, catalog)),
+            ),
           ),
-        checkProvider,
+        checkProvider: withModelProxyProbe(proxyRoute, httpClient, checkProvider),
         enrichSnapshot: ({ settings, snapshot, publishSnapshot }) =>
           resolveMaintenance().pipe(
             Effect.flatMap((maintenanceCapabilities) =>

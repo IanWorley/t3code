@@ -2,8 +2,6 @@ import {
   defaultInstanceIdForDriver,
   providerInstanceConfigEnabledFlag,
   resolveProviderInstanceEnabled,
-  type ProviderInstanceConfig,
-  type ProviderInstanceConfigMap,
   type ProviderInstanceId,
   ServerSettings,
 } from "@t3tools/contracts";
@@ -15,6 +13,10 @@ import * as Settings from "../serverSettings.ts";
 import { BUILT_IN_DRIVERS, type BuiltInDriversEnv } from "./builtInDrivers.ts";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import * as ProviderInstanceRegistryMutator from "./ProviderInstanceRegistryMutator.ts";
+import type {
+  ProviderInstanceEntry,
+  ProviderInstanceEntryMap,
+} from "./ProviderInstanceRegistryMutator.ts";
 import * as ProviderOrchestrationAdapterInfrastructure from "./ProviderOrchestrationAdapterInfrastructure.ts";
 import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
 import * as ProviderHostLive from "./ProviderHostLive.ts";
@@ -35,8 +37,8 @@ type ProviderInstanceRegistryHydrationEnv =
 
 export const deriveProviderInstanceConfigMap = (
   settings: ServerSettings,
-): ProviderInstanceConfigMap => {
-  const merged: Record<string, ProviderInstanceConfig> = { ...settings.providerInstances };
+): ProviderInstanceEntryMap => {
+  const merged: Record<string, ProviderInstanceEntry> = { ...settings.providerInstances };
 
   for (const driver of BUILT_IN_DRIVERS) {
     if (driver.metadata.hasDefaultInstance === false) continue;
@@ -66,7 +68,13 @@ export const deriveProviderInstanceConfigMap = (
     }
   }
 
-  return merged as ProviderInstanceConfigMap;
+  for (const [instanceId, entry] of Object.entries(merged)) {
+    if (entry.useModelProxy === true) {
+      merged[instanceId] = { ...entry, modelProxy: settings.modelProxy };
+    }
+  }
+
+  return merged as ProviderInstanceEntryMap;
 };
 
 const layerSettingsWatcher = Layer.effectDiscard(
@@ -101,7 +109,7 @@ export const layer: Layer.Layer<
     );
     const initialConfigMap =
       initialSettings === undefined
-        ? ({} as ProviderInstanceConfigMap)
+        ? ({} as ProviderInstanceEntryMap)
         : deriveProviderInstanceConfigMap(initialSettings);
 
     const layerMutable = ProviderInstanceRegistry.layer({

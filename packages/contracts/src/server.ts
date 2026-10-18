@@ -213,6 +213,11 @@ export const ServerProviderUpdateState = Schema.Struct({
 });
 export type ServerProviderUpdateState = typeof ServerProviderUpdateState.Type;
 
+export const ServerProviderModelProxyStatus = Schema.Struct({
+  status: Schema.Literals(["checking", "available", "unavailable"]),
+});
+export type ServerProviderModelProxyStatus = typeof ServerProviderModelProxyStatus.Type;
+
 export const ServerProvider = Schema.Struct({
   // Routing key for the configured instance this snapshot represents. This
   // is the only stable identity consumers may use for provider routing.
@@ -274,6 +279,8 @@ export const ServerProvider = Schema.Struct({
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   compatibilityAdvisory: Schema.optionalKey(ServerProviderCompatibilityAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
+  // Present while this instance routes its model traffic through the model proxy.
+  modelProxy: Schema.optionalKey(ServerProviderModelProxyStatus),
 });
 export type ServerProvider = typeof ServerProvider.Type;
 
