@@ -30,6 +30,17 @@ describe("compileClaudeModelSelection", () => {
     });
   });
 
+  it("passes a valid SDK effort through for models outside the catalog", () => {
+    expect(
+      compileClaudeModelSelection(selection("gpt-6.1-sol", [{ id: "effort", value: "high" }]))
+        .effort,
+    ).toBe("high");
+    expect(
+      compileClaudeModelSelection(selection("gpt-6.1-sol", [{ id: "effort", value: "ultrathink" }]))
+        .effort,
+    ).toBeUndefined();
+  });
+
   it("compiles fast mode only for models that expose it", () => {
     expect(
       compileClaudeModelSelection(selection("claude-opus-4-6", [{ id: "fastMode", value: true }]))

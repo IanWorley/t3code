@@ -1,4 +1,5 @@
 import type {
+  ModelCapabilities,
   ModelProxySettings,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -16,6 +17,46 @@ import { resolveCodexLaunchArgs, T3CODE_CODEX_LAUNCH_ARGS_ENV } from "./codexLau
 const MODELS_PATH = "/v1/models";
 const PROBE_TIMEOUT_MS = 2_000;
 const PROXY_MODEL_SUB_PROVIDER = "Proxy";
+const REASONING_LABEL = "Reasoning";
+const DEFAULT_REASONING = "medium";
+const reasoningChoices = (levels: ReadonlyArray<readonly [id: string, label: string]>) =>
+  levels.map(([id, label]) => ({
+    id,
+    label,
+    ...(id === DEFAULT_REASONING ? { isDefault: true } : {}),
+  }));
+const SHARED_REASONING_LEVELS = [
+  ["low", "Low"],
+  ["medium", "Medium"],
+  ["high", "High"],
+  ["xhigh", "Extra High"],
+] as const;
+/**
+ * The proxy's model list carries no capabilities, so proxy-only models get the reasoning option in
+ * the harness's own vocabulary; the proxy maps it onto whichever model family serves the request.
+ */
+const PROXY_MODEL_CAPABILITIES_BY_DRIVER: Readonly<Record<string, ModelCapabilities>> = {
+  codex: {
+    optionDescriptors: [
+      {
+        id: "reasoningEffort",
+        label: REASONING_LABEL,
+        type: "select",
+        options: reasoningChoices(SHARED_REASONING_LEVELS),
+      },
+    ],
+  },
+  claudeAgent: {
+    optionDescriptors: [
+      {
+        id: "effort",
+        label: REASONING_LABEL,
+        type: "select",
+        options: reasoningChoices([...SHARED_REASONING_LEVELS, ["max", "Max"]]),
+      },
+    ],
+  },
+};
 const CODEX_PROVIDER_ID = "t3_model_proxy";
 const CODEX_API_KEY_ENV = "T3CODE_MODEL_PROXY_API_KEY";
 // Claude refuses to start without a credential, even for a proxy that accepts anonymous clients.
@@ -182,7 +223,7 @@ export function applyModelProxyProbe(
       name: slug,
       subProvider: PROXY_MODEL_SUB_PROVIDER,
       isCustom: false,
-      capabilities: null,
+      capabilities: PROXY_MODEL_CAPABILITIES_BY_DRIVER[snapshot.driver] ?? null,
     }));
   // A harness problem is the more specific warning, so the proxy only fills in a ready snapshot.
   const warn = probe.message !== undefined && snapshot.status === "ready";

@@ -13,6 +13,7 @@ import {
 const route = { rootUrl: "http://proxy.test:8317", apiKey: "proxy-key" };
 
 const readySnapshot = {
+  driver: "codex",
   status: "ready",
   models: [{ slug: "gpt-5.5", name: "GPT-5.5", isCustom: false, capabilities: null }],
 } as unknown as ServerProvider;
@@ -77,6 +78,7 @@ describe("applyModelProxyProbe", () => {
       ["gpt-5.5", undefined],
       ["claude-sonnet-5", "Proxy"],
     ]);
+    expect(next.models[1]?.capabilities?.optionDescriptors?.[0]?.id).toBe("reasoningEffort");
     expect(next.status).toBe("ready");
     expect(next.modelProxy).toEqual({ status: "available" });
   });

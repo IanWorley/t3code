@@ -9,12 +9,23 @@ import {
 import {
   BUNDLED_CLAUDE_MODEL_CATALOG,
   getClaudeCatalogModelCapabilities,
+  isClaudeCatalogModel,
   isClaudeCatalogUltracodeEffort,
   normalizeClaudeCatalogEffort,
   resolveClaudeCatalogApiModelId,
   resolveClaudeCatalogEffort,
   type ClaudeModelCatalog,
 } from "./provider/ClaudeModelCatalog.ts";
+
+// The Agent SDK's effort levels. A model outside the catalog (custom or served by the model proxy)
+// has no descriptor to check a selection against, so one of these passes through unchanged.
+const CLAUDE_SDK_EFFORT_LEVELS: ReadonlySet<string> = new Set([
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+]);
 
 export interface CompiledClaudeModelSelection {
   readonly apiModelId: string;
@@ -34,7 +45,11 @@ export function compileClaudeModelSelection(
     descriptors.some((descriptor) => descriptor.type === "boolean" && descriptor.id === id);
   const rawEffort = getModelSelectionStringOptionValue(selection, "effort");
   const resolvedEffort = resolveClaudeCatalogEffort(catalog, selection.model, rawEffort);
-  const effort = normalizeClaudeCatalogEffort(catalog, resolvedEffort, selection.model);
+  const effort = isClaudeCatalogModel(catalog, selection.model)
+    ? normalizeClaudeCatalogEffort(catalog, resolvedEffort, selection.model)
+    : rawEffort !== undefined && CLAUDE_SDK_EFFORT_LEVELS.has(rawEffort)
+      ? rawEffort
+      : undefined;
   const fastMode = supportsBoolean("fastMode")
     ? (getModelSelectionBooleanOptionValue(selection, "fastMode") ?? false)
     : undefined;

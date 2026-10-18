@@ -130,6 +130,13 @@ function resolveClaudeCatalogModel(
   );
 }
 
+export function isClaudeCatalogModel(
+  catalog: ClaudeModelCatalog,
+  slugOrAlias: string | null | undefined,
+): boolean {
+  return resolveClaudeCatalogModel(catalog, slugOrAlias) !== undefined;
+}
+
 export function resolveClaudeModelSlug(catalog: ClaudeModelCatalog, slugOrAlias: string): string {
   return resolveClaudeCatalogModel(catalog, slugOrAlias)?.model.slug ?? slugOrAlias;
 }
