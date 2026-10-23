@@ -1,11 +1,16 @@
 import { assert, it } from "@effect/vitest";
-import { EventId, ThreadId, type TaskAgentObservation } from "@t3tools/contracts";
+import {
+  ComposerContextId,
+  EventId,
+  type OrchestrationMessageContext,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
-import * as Tracer from "effect/Tracer";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as Statement from "effect/sql/Statement";
 
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import { listLinkedPullRequestThreads } from "../../pullRequest/linkedThreads.ts";
@@ -14,8 +19,6 @@ import * as EventStore from "../EventStore.ts";
 import * as LegacyV1ThreadImporter from "./LegacyV1ThreadImporter.ts";
 import * as ProjectionMaintenance from "../ProjectionMaintenance.ts";
 import * as ProjectionStore from "../ProjectionStore.ts";
-
-const encodeActivityPayload = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const layerDatabase = SqlitePersistence.layerMemory;
 const layerEventStoreProvided = EventStore.layer.pipe(Layer.provideMerge(layerDatabase));
@@ -39,223 +42,115 @@ const layerTest = Layer.mergeAll(
   layerProjectionMaintenanceProvided,
 );
 
-it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
-  it.effect("uses the created-thread index for startup migration checks", () =>
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient;
-      const importer = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
-      const statements: string[] = [];
-      const tracer = Tracer.make({
-        span(options) {
-          const span = new Tracer.NativeSpan(options);
-          const end = span.end.bind(span);
-          span.end = (endTime, exit) => {
-            end(endTime, exit);
-            const query = span.attributes.get("db.query.text");
-            if (
-              typeof query === "string" &&
-              query.includes("FROM projection_threads AS thread") &&
-              query.includes("FROM orchestration_events AS event")
-            ) {
-              statements.push(query);
-            }
-          };
-          return span;
-        },
-      });
+const seedPendingTranscripts = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const importer = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
+  const threadIds = [ThreadId.make("thread:first"), ThreadId.make("thread:later")];
+  yield* sql`
+    INSERT INTO projection_projects (
+      project_id, title, workspace_root, scripts_json, created_at, updated_at
+    ) VALUES (
+      'project:background', 'Legacy project', '/tmp/legacy-background', '[]',
+      '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
+    )
+  `;
+  for (const threadId of threadIds) {
+    yield* sql`
+      INSERT INTO projection_threads (
+        thread_id, project_id, title, model_selection_json, runtime_mode,
+        interaction_mode, created_at, updated_at
+      ) VALUES (
+        ${threadId}, 'project:background', 'Legacy thread',
+        '{"instanceId":"codex","model":"gpt-5.4"}', 'full-access', 'default',
+        '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
+      )
+    `;
+    yield* sql`
+      INSERT INTO projection_thread_messages (
+        message_id, thread_id, role, text, is_streaming, created_at, updated_at
+      ) VALUES
+        (${`${threadId}:old`}, ${threadId}, 'user', 'Old question', 0,
+          '2026-01-01T01:00:00.000Z', '2026-01-01T01:00:00.000Z'),
+        (${`${threadId}:latest`}, ${threadId}, 'user', 'Latest question', 0,
+          '2026-01-02T01:00:00.000Z', '2026-01-02T01:00:00.000Z')
+    `;
+  }
+  yield* importer.reconcileShells;
+});
 
-      assert.equal(yield* importer.pendingThreadCount.pipe(Effect.withTracer(tracer)), 0);
-      assert.deepStrictEqual(yield* importer.reconcileShells.pipe(Effect.withTracer(tracer)), {
-        importedThreadCount: 0,
-        importedMessageCount: 0,
-      });
-      assert.lengthOf(statements, 2);
-      for (const statement of statements) {
-        const plan = yield* sql.unsafe<{ readonly detail: string }>(
-          `EXPLAIN QUERY PLAN ${statement}`,
-        );
-        assert.match(
-          plan.map((row) => row.detail).join("\n"),
-          /SEARCH event USING INDEX orchestration_events_v2_created_threads_idx \(stream_id=\?\)/,
-        );
-      }
-    }),
-  );
-
-  it.effect(
-    "retains Kiro child chat and context snapshots across transcript import and replay",
-    () =>
-      Effect.gen(function* () {
-        const sql = yield* SqlClient.SqlClient;
-        const importer = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
-        const projections = yield* ProjectionStore.ProjectionStoreV2;
-        const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
-        const threadId = ThreadId.make("thread:legacy-kiro-observation");
-        const observation: TaskAgentObservation = {
-          entries: [
-            { id: "task", kind: "user", text: "Inspect the login flow" },
-            { id: "reasoning", kind: "reasoning", text: "Trace the session refresh" },
-            { id: "reply", kind: "assistant", text: "The refresh token expires first" },
-          ],
-          truncated: false,
-          contextUsage: { usedTokens: 12000, capacityTokens: 200000 },
-        };
-        yield* sql`
-        INSERT INTO projection_projects (project_id, title, workspace_root,
-          scripts_json, created_at, updated_at)
-        VALUES ('project:legacy-kiro', 'Kiro project', '/tmp/legacy-kiro',
-          '[]', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:04.000Z')
-      `;
-        yield* sql`
-        INSERT INTO projection_threads (thread_id, project_id, title, model_selection_json,
-          runtime_mode, interaction_mode, created_at, updated_at)
-        VALUES (${threadId}, 'project:legacy-kiro', 'Kiro history',
-          '{"instanceId":"kiro_work","model":"claude-sonnet-4.5"}',
-          'full-access', 'default', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:04.000Z')
-      `;
-        const activities = [
-          {
-            id: "started",
-            kind: "task.started",
-            at: "2026-01-01T00:00:01.000Z",
-            payload: {
-              taskId: "child-login",
-              agentKind: "agent",
-              title: "Login review",
-              detail: "Inspect the login flow",
-              model: "claude-sonnet-4.5",
-            },
-          },
-          {
-            id: "completed",
-            kind: "task.completed",
-            at: "2026-01-01T00:00:02.000Z",
-            payload: {
-              taskId: "child-login",
-              status: "completed",
-              summary: "Found expired refresh token",
-            },
-          },
-          {
-            id: "snapshot",
-            kind: "task.progress",
-            at: "2026-01-01T00:00:03.000Z",
-            payload: {
-              taskId: "child-login",
-              agentKind: "agent",
-              observationSnapshot: true,
-              observation,
-            },
-          },
-          {
-            id: "shell",
-            kind: "task.started",
-            at: "2026-01-01T00:00:04.000Z",
-            payload: { taskId: "background-shell", agentKind: "background", detail: "Run tests" },
-          },
-        ];
-        for (const [sequence, activity] of activities.entries()) {
-          yield* sql`
-          INSERT INTO projection_thread_activities (activity_id, thread_id, turn_id,
-            tone, kind, summary, payload_json, created_at, sequence)
-          VALUES (${`${threadId}:${activity.id}`}, ${threadId}, 'turn:legacy-kiro',
-            'info', ${activity.kind}, 'Kiro task update', ${encodeActivityPayload(activity.payload)},
-            ${activity.at}, ${sequence})
-        `;
-        }
-        yield* importer.reconcileShells;
-        assert.lengthOf((yield* projections.getThreadProjection(threadId)).subagents, 0);
-        yield* importer.ensureTranscript(threadId);
-        const projection = yield* projections.getThreadProjection(threadId);
-        assert.lengthOf(projection.subagents, 1);
-        const agent = projection.subagents[0];
-        assert.deepStrictEqual(agent?.observation, observation);
-        assert.equal(agent?.title, "Login review");
-        assert.equal(agent?.model, "claude-sonnet-4.5");
-        assert.equal(agent?.providerInstanceId, "kiro_work");
-        assert.equal(agent?.status, "completed");
-        assert.equal(agent?.result, "Found expired refresh token");
-        assert.deepStrictEqual(agent?.completedAt, DateTime.makeUnsafe("2026-01-01T00:00:02.000Z"));
-        const item = projection.turnItems.find((item) => item.type === "subagent");
-        assert.equal(item?.title, "Login review");
-        assert.equal(item?.status, "completed");
-        assert.deepStrictEqual(yield* importer.ensureTranscript(threadId), {
-          importedThreadCount: 0,
-          importedMessageCount: 0,
-        });
-        assert.lengthOf((yield* projections.getThreadProjection(threadId)).subagents, 1);
-        const restartedImport = yield* Effect.gen(function* () {
-          const restarted = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
-          return yield* restarted.ensureTranscript(threadId);
-        }).pipe(Effect.provide(LegacyV1ThreadImporter.layer));
-        assert.deepStrictEqual(restartedImport, {
-          importedThreadCount: 0,
-          importedMessageCount: 0,
-        });
-        const importedTaskEvents = yield* sql<{ readonly count: number }>`
-          SELECT COUNT(*) AS count FROM orchestration_events
-          WHERE application_event_version = 2 AND stream_id = ${threadId}
-            AND event_id LIKE 'migration:v1:subagent:%'
-        `;
-        assert.equal(importedTaskEvents[0]?.count, 2);
-        yield* maintenance.rebuild;
-        assert.deepStrictEqual(
-          (yield* projections.getThreadProjection(threadId)).subagents,
-          projection.subagents,
-        );
-      }),
-  );
-
-  it.effect("interrupts observed legacy agents whose provider run cannot resume", () =>
+it.effect(
+  "keeps hydrating later transcripts after a defect and leaves the failed thread pending",
+  () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const importer = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
       const projections = yield* ProjectionStore.ProjectionStoreV2;
-      const threadId = ThreadId.make("thread:legacy-kiro-active");
-      const observation: TaskAgentObservation = {
-        entries: [{ id: "reply", kind: "assistant", text: "Checking the refresh flow" }],
-        truncated: false,
-        contextUsage: { usedTokens: 8000, capacityTokens: 200000 },
-      };
+      yield* seedPendingTranscripts;
       yield* sql`
-        INSERT INTO projection_projects (project_id, title, workspace_root,
-          scripts_json, created_at, updated_at)
-        VALUES ('project:legacy-kiro-active', 'Kiro project', '/tmp/legacy-kiro-active',
-          '[]', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:01.000Z')
+        UPDATE projection_thread_messages SET created_at = '0000-not-a-date'
+        WHERE message_id = 'thread:first:old'
       `;
-      yield* sql`
-        INSERT INTO projection_threads (thread_id, project_id, title, model_selection_json,
-          runtime_mode, interaction_mode, created_at, updated_at)
-        VALUES (${threadId}, 'project:legacy-kiro-active', 'Active Kiro history',
-          '{"instanceId":"kiro","model":"claude-sonnet-4.5"}',
-          'full-access', 'default', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:01.000Z')
-      `;
-      yield* sql`
-        INSERT INTO projection_thread_activities (activity_id, thread_id, tone,
-          kind, summary, payload_json, created_at, sequence)
-        VALUES ('legacy:kiro:active', ${threadId}, 'info', 'task.progress',
-          'Checking refresh flow', ${encodeActivityPayload({
-            taskId: "child-refresh",
-            agentKind: "agent",
-            status: "running",
-            observation,
-          })}, '2026-01-01T00:00:01.000Z', 1)
-      `;
-      yield* importer.reconcileShells;
-      yield* importer.ensureTranscript(threadId);
-      const projection = yield* projections.getThreadProjection(threadId);
-      assert.deepStrictEqual(
-        projection.subagents.map((agent) => agent.status),
-        ["interrupted"],
-      );
-      assert.deepStrictEqual(projection.subagents[0]?.observation, observation);
-      assert.deepStrictEqual(
-        projection.turnItems.map((item) => item.status),
-        ["interrupted"],
-      );
-    }),
-  );
 
+      yield* importer.importPendingTranscripts;
+
+      const later = yield* projections.getThreadProjection(ThreadId.make("thread:later"));
+      assert.deepStrictEqual(
+        later.messages.map((message) => message.text),
+        ["Old question", "Latest question"],
+      );
+      assert.deepStrictEqual(
+        yield* sql`
+          SELECT thread_id, transcript_imported_at, last_error FROM orchestration_v2_legacy_imports
+          WHERE transcript_imported_at IS NULL OR last_error IS NOT NULL
+        `,
+        [
+          {
+            thread_id: "thread:first",
+            transcript_imported_at: null,
+            last_error: "Transcript hydration failed; retry on next open.",
+          },
+        ],
+      );
+    }).pipe(Effect.provide(layerTest)),
+);
+
+// regression: #15920 one bad legacy message stopped the server from starting
+it.effect("propagates interruption from transcript reads and retry-marker writes", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const importer = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
+    yield* seedPendingTranscripts;
+    const interrupted = [];
+    for (const phase of ["transcript", "retry-marker"]) {
+      const exit = yield* importer.importPendingTranscripts.pipe(
+        Effect.provideService(Statement.CurrentTransformer, (statement) => {
+          const [query] = statement.compile();
+          const readingTranscript = query.includes("FROM projection_thread_messages");
+          const writingRetryMarker = query.includes("SET last_error =");
+          if (phase === "retry-marker" && readingTranscript) {
+            return Effect.die("transcript read failed");
+          }
+          if (phase === "transcript" ? readingTranscript : writingRetryMarker) {
+            return Effect.interrupt;
+          }
+          return Effect.succeed(statement);
+        }),
+        Effect.exit,
+      );
+      interrupted.push(Exit.hasInterrupts(exit));
+    }
+    assert.deepStrictEqual(interrupted, [true, true]);
+    assert.deepStrictEqual(
+      yield* sql`
+        SELECT thread_id FROM orchestration_v2_legacy_imports
+        WHERE transcript_imported_at IS NOT NULL OR last_error IS NOT NULL
+      `,
+      [],
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
   it.effect("imports lightweight shells, hydrates transcripts, and remains idempotent", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
@@ -391,6 +286,31 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
         )
       `;
 
+      const validContext = {
+        version: 1,
+        records: [
+          {
+            version: 1,
+            contextId: ComposerContextId.make("ctx_1"),
+            kind: "skill",
+            label: "$test",
+            name: "test",
+          },
+        ],
+      } satisfies OrchestrationMessageContext;
+      yield* sql`
+        UPDATE projection_thread_messages
+        SET context_json = CASE message_id
+          WHEN 'message:legacy:2' THEN '{broken-json'
+          WHEN 'message:legacy:3' THEN '{"version":2,"records":[]}'
+          ELSE ${JSON.stringify(validContext)}
+        END
+        WHERE thread_id = ${threadId}
+      `;
+      const sourceMessages = yield* sql`
+        SELECT * FROM projection_thread_messages WHERE thread_id = ${threadId} ORDER BY message_id
+      `;
+
       yield* sql`
         INSERT INTO projection_thread_pull_requests (
           thread_id, host, repository, number, url, source, linked_at, snapshot_json
@@ -461,6 +381,13 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
         shellProjection.messages.map((message) => message.id),
         ["message:legacy:3", "message:legacy:4"],
       );
+      assert.deepStrictEqual(
+        shellProjection.messages.map((message) => [message.text, message.context]),
+        [
+          ["Follow-up question", undefined],
+          ["Partial answer", validContext],
+        ],
+      );
 
       const renamedAt = DateTime.makeUnsafe("2026-01-05T00:00:00.000Z");
       yield* eventSink.write({
@@ -485,7 +412,7 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
         ],
       });
 
-      const transcriptImport = yield* importer.ensureTranscript(threadId);
+      const transcriptImport = yield* importer.importPendingTranscripts;
       assert.equal(yield* importer.pendingThreadCount, 0);
       assert.deepStrictEqual(transcriptImport, {
         importedThreadCount: 1,
@@ -493,6 +420,7 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
       });
       const projection = yield* projections.getThreadProjection(threadId);
       assert.equal(projection.thread.title, "Renamed after shell import");
+      assert.isNull(projection.thread.lastVisitedAt);
       assert.equal(projection.thread.runtimeMode, "approval-required");
       assert.equal(projection.thread.interactionMode, "plan");
       assert.deepEqual(projection.thread.archivedAt, renamedAt);
@@ -501,6 +429,22 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
       assert.deepStrictEqual(
         projection.messages.map((message) => message.id),
         ["message:legacy:1", "message:legacy:2", "message:legacy:3", "message:legacy:4"],
+      );
+      const expectedMessages = [
+        ["First question", validContext],
+        ["First answer", undefined],
+        ["Follow-up question", undefined],
+        ["Partial answer", validContext],
+      ];
+      assert.deepStrictEqual(
+        projection.messages.map((message) => [message.text, message.context]),
+        expectedMessages,
+      );
+      assert.deepStrictEqual(
+        yield* sql`
+          SELECT * FROM projection_thread_messages WHERE thread_id = ${threadId} ORDER BY message_id
+        `,
+        sourceMessages,
       );
       assert.deepStrictEqual(
         projection.turnItems

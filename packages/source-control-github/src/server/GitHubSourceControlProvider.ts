@@ -963,8 +963,8 @@ export const make = Effect.gen(function* () {
           providerError("getChangeRequest", input.cwd, { reference: input.reference }),
         ),
       ),
-    createChangeRequest: (input) =>
-      Effect.gen(function* () {
+    createChangeRequest: Effect.fn("GitHubSourceControlProvider.createChangeRequest")(
+      function* (input) {
         const locator = yield* resolveRepository(input);
         const body = yield* fileSystem
           .readFileString(input.bodyFile)
@@ -989,13 +989,16 @@ export const make = Effect.gen(function* () {
             maintainer_can_modify: true,
           },
         });
-      }).pipe(
-        Effect.mapError(
-          providerError("createChangeRequest", input.cwd, { reference: input.headSelector }),
+      },
+      (effect, input) =>
+        effect.pipe(
+          Effect.mapError(
+            providerError("createChangeRequest", input.cwd, { reference: input.headSelector }),
+          ),
         ),
-      ),
-    getRepositoryCloneUrls: (input) =>
-      Effect.gen(function* () {
+    ),
+    getRepositoryCloneUrls: Effect.fn("GitHubSourceControlProvider.getRepositoryCloneUrls")(
+      function* (input) {
         const fallbackHost = (yield* resolveRepository(input).pipe(
           Effect.map((locator) => locator.host),
           Effect.orElseSucceed(() => environment.GH_HOST ?? "github.com"),
@@ -1008,13 +1011,16 @@ export const make = Effect.gen(function* () {
             : null);
         if (locator === null) return yield* failure("Repositories are named owner/name.");
         return repositoryCloneUrls(yield* readRepository(locator));
-      }).pipe(
-        Effect.mapError(
-          providerError("getRepositoryCloneUrls", input.cwd, { repository: input.repository }),
+      },
+      (effect, input) =>
+        effect.pipe(
+          Effect.mapError(
+            providerError("getRepositoryCloneUrls", input.cwd, { repository: input.repository }),
+          ),
         ),
-      ),
-    searchRepositories: (input) =>
-      Effect.gen(function* () {
+    ),
+    searchRepositories: Effect.fn("GitHubSourceControlProvider.searchRepositories")(
+      function* (input) {
         const host = (yield* resolveRepository(input).pipe(
           Effect.map((locator) => locator.host),
           Effect.orElseSucceed(() => environment.GH_HOST ?? "github.com"),
@@ -1039,9 +1045,12 @@ export const make = Effect.gen(function* () {
           url: repository.html_url,
           visibility: repository.private ? "private" : "public",
         }));
-      }).pipe(Effect.mapError(providerError("searchRepositories", input.cwd))),
-    createRepository: (input) =>
-      Effect.gen(function* () {
+      },
+      (effect, input) =>
+        effect.pipe(Effect.mapError(providerError("searchRepositories", input.cwd))),
+    ),
+    createRepository: Effect.fn("GitHubSourceControlProvider.createRepository")(
+      function* (input) {
         const locator = parseGitHubRepositorySelector(
           input.repository,
           (environment.GH_HOST ?? "github.com").toLowerCase(),
@@ -1069,13 +1078,16 @@ export const make = Effect.gen(function* () {
           return yield* failure("GitHub returned an invalid repository.", decoded.failure);
         }
         return repositoryCloneUrls(decoded.success);
-      }).pipe(
-        Effect.mapError(
-          providerError("createRepository", input.cwd, { repository: input.repository }),
+      },
+      (effect, input) =>
+        effect.pipe(
+          Effect.mapError(
+            providerError("createRepository", input.cwd, { repository: input.repository }),
+          ),
         ),
-      ),
-    getDefaultBranch: (input) =>
-      Effect.gen(function* () {
+    ),
+    getDefaultBranch: Effect.fn("GitHubSourceControlProvider.getDefaultBranch")(
+      function* (input) {
         const locator = yield* resolveRepository({
           cwd: input.cwd,
           host: contextHost(input.context),
@@ -1084,7 +1096,9 @@ export const make = Effect.gen(function* () {
         const repository = yield* readRepository(locator);
         const branch = repository.default_branch?.trim() ?? "";
         return branch.length > 0 ? branch : null;
-      }).pipe(Effect.mapError(providerError("getDefaultBranch", input.cwd))),
+      },
+      (effect, input) => effect.pipe(Effect.mapError(providerError("getDefaultBranch", input.cwd))),
+    ),
     checkoutChangeRequest: (input) =>
       checkoutPullRequest(input).pipe(
         Effect.mapError(

@@ -3,6 +3,7 @@ import {
   ClaudeSettings,
   CodexSettings,
   ModelProxySettings,
+  EasDeviceHostConfig,
   type ServerSettings,
   UsageLimitSourceConfig,
   secretSettingsFields,
@@ -33,6 +34,7 @@ const providerSecretFields = new Map([
 ]);
 const usageLimitSecretFields = secretSettingsFields(UsageLimitSourceConfig);
 const modelProxySecretFields = secretSettingsFields(ModelProxySettings);
+const easDeviceHostSecretFields = secretSettingsFields(EasDeviceHostConfig);
 const encode = (value: string) => Buffer.from(value, "utf8").toString("base64url");
 
 export interface SettingsSecret {
@@ -147,8 +149,27 @@ export function mapSettingsSecrets(
   const modelProxy = mapFields(
     settings.modelProxy,
     modelProxySecretFields,
-    (field) => `model-proxy-${encode(field)}`,
+    (field, serverHost) =>
+      `model-proxy-${encode(field)}` + (serverHost === null ? "" : `-${encode(serverHost)}`),
   ) as ServerSettings["modelProxy"];
 
-  return { ...settings, providerInstances, sourceControlHosts, usageLimitSources, modelProxy };
+  const easDeviceHosts = settings.easDeviceHosts.map(
+    (host) =>
+      mapFields(
+        host,
+        easDeviceHostSecretFields,
+        (field, serverHost) =>
+          `device-host-${encode(host.id)}-${encode(field)}` +
+          (serverHost === null ? "" : `-${encode(serverHost)}`),
+      ) as EasDeviceHostConfig,
+  );
+
+  return {
+    ...settings,
+    providerInstances,
+    sourceControlHosts,
+    usageLimitSources,
+    easDeviceHosts,
+    modelProxy,
+  };
 }

@@ -7,13 +7,8 @@ import {
   OrchestrationMessageContext,
   DEFAULT_MODEL,
   EventId,
-  isOrchestrationV2WorkActive,
   MessageId,
   ModelSelection,
-  NodeId,
-  ProviderDriverKind,
-  TaskAgentObservation,
-  type OrchestrationV2Subagent,
   type OrchestrationV2AppThread,
   OrchestrationV2AppThreadJson,
   type OrchestrationV2ConversationMessage,
@@ -27,6 +22,8 @@ import {
   TurnItemId,
 } from "@t3tools/contracts";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -85,13 +82,6 @@ interface LegacyMessageRow {
   readonly ordinal: number;
 }
 
-interface LegacyTaskActivityRow {
-  readonly thread_id: string;
-  readonly kind: string;
-  readonly payload_json: string;
-  readonly created_at: string;
-}
-
 interface LegacyImportRow {
   readonly thread_id: string;
   readonly transcript_imported_at: string | null;
@@ -138,22 +128,7 @@ const decodeLinkedPullRequest = Schema.decodeUnknownOption(ThreadLinkedPullReque
 const decodeStoredThread = Schema.decodeUnknownOption(
   Schema.fromJsonString(OrchestrationV2AppThreadJson),
 );
-
-const decodeLegacyTaskPayload = Schema.decodeUnknownOption(
-  Schema.Struct({
-    taskId: Schema.String,
-    agentKind: Schema.optional(Schema.String),
-    title: Schema.optional(Schema.String),
-    detail: Schema.optional(Schema.String),
-    summary: Schema.optional(Schema.String),
-    model: Schema.optional(Schema.String),
-    status: Schema.optional(Schema.String),
-    error: Schema.optional(Schema.String),
-    observationSnapshot: Schema.optional(Schema.Boolean),
-    observation: Schema.optional(Schema.Unknown),
-  }),
-);
-const decodeObservation = Schema.decodeUnknownOption(TaskAgentObservation);
+const decodeMessageContext = Schema.decodeUnknownOption(OrchestrationMessageContext);
 
 function parseJson(json: string): unknown {
   try {
@@ -177,6 +152,11 @@ function modelSelectionFor(row: LegacyThreadRow) {
 function attachmentsFor(row: LegacyMessageRow) {
   if (row.attachments_json === null) return [];
   return Option.getOrElse(decodeAttachments(parseJson(row.attachments_json)), () => []);
+}
+
+function contextFor(row: LegacyMessageRow) {
+  if (!row.context_json) return undefined;
+  return Option.getOrUndefined(decodeMessageContext(parseJson(row.context_json)));
 }
 
 function linkedPullRequestFor(row: LegacyThreadRow) {
@@ -276,6 +256,7 @@ function messageEvents(row: LegacyMessageRow): ReadonlyArray<OrchestrationV2Doma
   const createdAt = dateTime(row.created_at);
   const updatedAt = dateTime(row.updated_at);
   const attachments = attachmentsFor(row);
+  const context = contextFor(row);
   const message: OrchestrationV2ConversationMessage = {
     createdBy: row.role === "user" ? "user" : "agent",
     creationSource: "server",
@@ -285,13 +266,7 @@ function messageEvents(row: LegacyMessageRow): ReadonlyArray<OrchestrationV2Doma
     nodeId: null,
     role: row.role,
     text: row.text,
-    ...(row.context_json
-      ? {
-          context: Schema.decodeUnknownSync(OrchestrationMessageContext)(
-            parseJson(row.context_json),
-          ),
-        }
-      : {}),
+    ...(context !== undefined ? { context } : {}),
     attachments,
     streaming: false,
     createdAt,
@@ -323,13 +298,7 @@ function messageEvents(row: LegacyMessageRow): ReadonlyArray<OrchestrationV2Doma
           messageId,
           inputIntent: "turn_start",
           text: row.text,
-          ...(row.context_json
-            ? {
-                context: Schema.decodeUnknownSync(OrchestrationMessageContext)(
-                  parseJson(row.context_json),
-                ),
-              }
-            : {}),
+          ...(context !== undefined ? { context } : {}),
           attachments,
         }
       : {
@@ -337,13 +306,7 @@ function messageEvents(row: LegacyMessageRow): ReadonlyArray<OrchestrationV2Doma
           type: "assistant_message",
           messageId,
           text: row.text,
-          ...(row.context_json
-            ? {
-                context: Schema.decodeUnknownSync(OrchestrationMessageContext)(
-                  parseJson(row.context_json),
-                ),
-              }
-            : {}),
+          ...(context !== undefined ? { context } : {}),
           streaming: false,
         };
   return [
@@ -362,151 +325,6 @@ function messageEvents(row: LegacyMessageRow): ReadonlyArray<OrchestrationV2Doma
       payload: turnItem,
     },
   ];
-}
-
-function legacyTaskStatus(
-  status: string | undefined,
-): OrchestrationV2Subagent["status"] | undefined {
-  switch (status) {
-    case "running":
-    case "inProgress":
-    case "in_progress":
-      return "running";
-    case "pending":
-    case "waiting":
-    case "idle":
-    case "completed":
-    case "failed":
-    case "cancelled":
-    case "interrupted":
-      return status;
-    case "stopped":
-      return "cancelled";
-    default:
-      return undefined;
-  }
-}
-
-function observedTaskEvents(
-  rows: ReadonlyArray<LegacyTaskActivityRow>,
-  providerInstanceId: ProviderInstanceId,
-  messageCount: number,
-): ReadonlyArray<OrchestrationV2DomainEvent> {
-  const agents = new Map<string, OrchestrationV2Subagent>();
-  for (const row of rows) {
-    const decoded = decodeLegacyTaskPayload(parseJson(row.payload_json));
-    if (Option.isNone(decoded)) continue;
-    const payload = decoded.value;
-    const previous = agents.get(payload.taskId);
-    if (previous === undefined && payload.agentKind !== "agent") continue;
-    const at = dateTime(row.created_at);
-    const threadId = ThreadId.make(row.thread_id);
-    const agent: OrchestrationV2Subagent = previous ?? {
-      id: NodeId.make(`${IMPORT_EVENT_PREFIX}:subagent:${row.thread_id}:${payload.taskId}`),
-      threadId,
-      runId: null,
-      parentNodeId: NodeId.make(`${IMPORT_EVENT_PREFIX}:root:${row.thread_id}`),
-      origin: "provider_native",
-      createdBy: "agent",
-      driver: ProviderDriverKind.make("kiro"),
-      providerInstanceId,
-      providerThreadId: null,
-      childThreadId: null,
-      nativeTaskRef: null,
-      prompt: payload.detail ?? "",
-      title: payload.title ?? payload.detail ?? null,
-      model: payload.model ?? null,
-      status: "interrupted",
-      result: null,
-      startedAt: at,
-      completedAt: null,
-      updatedAt: at,
-    };
-    const observation = Option.getOrUndefined(decodeObservation(payload.observation));
-    const snapshot = payload.observationSnapshot === true;
-    const reportedStatus = legacyTaskStatus(payload.status);
-    const status = snapshot
-      ? agent.status
-      : (reportedStatus ??
-        (row.kind === "task.completed"
-          ? "completed"
-          : row.kind === "task.started"
-            ? "interrupted"
-            : agent.status));
-    const terminal =
-      status === "completed" ||
-      status === "failed" ||
-      status === "cancelled" ||
-      status === "interrupted";
-    agents.set(payload.taskId, {
-      ...agent,
-      title: payload.title ?? agent.title,
-      model: payload.model ?? agent.model,
-      status,
-      ...(observation ? { observation } : {}),
-      ...(!snapshot && payload.detail ? { progress: payload.detail } : {}),
-      result:
-        !snapshot && terminal
-          ? (payload.error ??
-            payload.summary ??
-            (row.kind === "task.completed" ? payload.detail : undefined) ??
-            agent.result)
-          : agent.result,
-      completedAt: snapshot ? agent.completedAt : terminal ? at : null,
-      updatedAt: at,
-    });
-  }
-  return [...agents.values()]
-    .filter((agent) => agent.observation !== undefined)
-    .map((agent): OrchestrationV2Subagent =>
-      isOrchestrationV2WorkActive(agent.status)
-        ? { ...agent, status: "interrupted", completedAt: agent.updatedAt }
-        : agent,
-    )
-    .flatMap((agent, index) => {
-      const item: OrchestrationV2TurnItem = {
-        id: TurnItemId.make(`${agent.id}:turn-item`),
-        threadId: agent.threadId,
-        runId: null,
-        nodeId: agent.id,
-        providerThreadId: null,
-        providerTurnId: null,
-        nativeItemRef: null,
-        parentItemId: null,
-        ordinal: messageCount + index + 1,
-        type: "subagent",
-        subagentId: agent.id,
-        origin: agent.origin,
-        driver: agent.driver,
-        providerInstanceId: agent.providerInstanceId,
-        childThreadId: null,
-        prompt: agent.prompt,
-        title: agent.title,
-        status: agent.status,
-        result: agent.result,
-        ...(agent.progress ? { progress: agent.progress } : {}),
-        startedAt: agent.startedAt,
-        completedAt: agent.completedAt,
-        updatedAt: agent.updatedAt,
-      };
-      return [
-        {
-          id: EventId.make(agent.id),
-          type: "subagent.updated",
-          threadId: agent.threadId,
-          providerInstanceId,
-          occurredAt: agent.updatedAt,
-          payload: agent,
-        },
-        {
-          id: EventId.make(item.id),
-          type: "turn-item.updated",
-          threadId: agent.threadId,
-          occurredAt: agent.updatedAt,
-          payload: item,
-        },
-      ];
-    });
 }
 
 function chunks<A>(items: ReadonlyArray<A>, size: number): Array<ReadonlyArray<A>> {
@@ -542,11 +360,12 @@ const make = Effect.gen(function* () {
       WHERE thread_id = ${threadId}
         AND role IN ('user', 'assistant')
       ORDER BY created_at ASC, message_id ASC
-    `;
+    `.pipe(NodeSqliteClient.readOnly);
 
-  const listShellMessages = (threadId: ThreadId) =>
-    Effect.gen(function* () {
-      const latest = yield* sql<LegacyMessageRow>`
+  const listShellMessages = Effect.fn("LegacyV1ThreadImporter.listShellMessages")(function* (
+    threadId: ThreadId,
+  ) {
+    const latest = yield* sql<LegacyMessageRow>`
         SELECT
           message.message_id,
           message.thread_id,
@@ -576,7 +395,7 @@ const make = Effect.gen(function* () {
         ORDER BY message.created_at DESC, message.message_id DESC
         LIMIT 1
       `;
-      const latestUser = yield* sql<LegacyMessageRow>`
+    const latestUser = yield* sql<LegacyMessageRow>`
         SELECT
           message.message_id,
           message.thread_id,
@@ -606,12 +425,12 @@ const make = Effect.gen(function* () {
         ORDER BY message.created_at DESC, message.message_id DESC
         LIMIT 1
       `;
-      return [latestUser[0], latest[0]].filter(
-        (message, index, selected): message is LegacyMessageRow =>
-          message !== undefined &&
-          selected.findIndex((candidate) => candidate?.message_id === message.message_id) === index,
-      );
-    });
+    return [latestUser[0], latest[0]].filter(
+      (message, index, selected): message is LegacyMessageRow =>
+        message !== undefined &&
+        selected.findIndex((candidate) => candidate?.message_id === message.message_id) === index,
+    );
+  });
 
   const reconcileShellsBase = Effect.gen(function* () {
     const now = DateTime.formatIso(yield* DateTime.now);
@@ -851,6 +670,7 @@ const make = Effect.gen(function* () {
       WHERE legacy_import.transcript_imported_at IS NULL
     )
   `.pipe(
+    NodeSqliteClient.readOnly,
     Effect.map((rows) => rows[0]?.count ?? 0),
     Effect.mapError(
       (cause) => new LegacyV1ThreadImportError({ operation: "inspect pending", cause }),
@@ -872,7 +692,7 @@ const make = Effect.gen(function* () {
           FROM orchestration_v2_legacy_imports
           WHERE thread_id = ${threadId}
           LIMIT 1
-        `;
+        `.pipe(NodeSqliteClient.readOnly);
         const imported = imports[0];
         if (imported === undefined || imported.transcript_imported_at !== null) {
           if (imported !== undefined) {
@@ -881,14 +701,16 @@ const make = Effect.gen(function* () {
           return { importedThreadCount: 0, importedMessageCount: 0 };
         }
         const messages = yield* listMessages(threadId);
+        // The thread's V1 events are still in the table here. Without the hint
+        // SQLite walks them through the stream index and reads past each payload.
         const existingRows = yield* sql<{ readonly event_id: string }>`
           SELECT event_id
-          FROM orchestration_events
+          FROM orchestration_events INDEXED BY idx_orchestration_events_agent_stream_sequence
           WHERE application_event_version = 2
             AND aggregate_kind = 'thread'
             AND stream_id = ${threadId}
             AND event_id LIKE ${`${IMPORT_EVENT_PREFIX}:message:%`}
-        `;
+        `.pipe(NodeSqliteClient.readOnly);
         const existing = new Set(existingRows.map((row) => row.event_id));
         const missing = messages.filter(
           (message) => !existing.has(`${IMPORT_EVENT_PREFIX}:message:${message.message_id}`),
@@ -914,37 +736,6 @@ const make = Effect.gen(function* () {
           );
           yield* eventSink.write({ events: batch.flatMap(messageEvents) });
           yield* Effect.yieldNow;
-        }
-        const taskRows = yield* sql<LegacyTaskActivityRow>`
-          SELECT thread_id, kind, payload_json, created_at
-          FROM projection_thread_activities
-          WHERE thread_id = ${threadId}
-            AND kind IN ('task.started', 'task.progress', 'task.updated', 'task.completed')
-          ORDER BY created_at ASC, sequence ASC, activity_id ASC
-        `;
-        const threads = yield* sql<{ readonly provider_instance_id: string }>`
-          SELECT provider_instance_id FROM orchestration_v2_projection_threads
-          WHERE thread_id = ${threadId}
-        `;
-        const providerInstanceId = threads[0]?.provider_instance_id;
-        if (providerInstanceId !== undefined) {
-          const events = observedTaskEvents(
-            taskRows,
-            ProviderInstanceId.make(providerInstanceId),
-            messages.length,
-          );
-          const importedTasks = yield* sql<{ readonly event_id: string }>`
-            SELECT event_id FROM orchestration_events
-            WHERE application_event_version = 2 AND stream_id = ${threadId}
-              AND event_id LIKE ${`${IMPORT_EVENT_PREFIX}:subagent:%`}
-          `;
-          const existingTasks = new Set(importedTasks.map((row) => row.event_id));
-          for (const batch of chunks(
-            events.filter((event) => !existingTasks.has(event.id)),
-            TRANSCRIPT_EVENT_BATCH_SIZE,
-          )) {
-            yield* eventSink.write({ events: batch });
-          }
         }
         const now = DateTime.formatIso(yield* DateTime.now);
         yield* sql`
@@ -983,29 +774,32 @@ const make = Effect.gen(function* () {
       FROM orchestration_v2_legacy_imports
       WHERE transcript_imported_at IS NULL
       ORDER BY shell_imported_at ASC, thread_id ASC
-    `;
+    `.pipe(NodeSqliteClient.readOnly);
     let importedThreadCount = 0;
     let importedMessageCount = 0;
     for (const row of rows) {
       const result = yield* ensureTranscript(ThreadId.make(row.thread_id)).pipe(
-        Effect.tapError((error) =>
-          Effect.logWarning("Failed to hydrate migrated v1 thread transcript", {
-            threadId: row.thread_id,
-            cause: error,
-          }),
-        ),
-        Effect.catch(() =>
-          sql`
-            UPDATE orchestration_v2_legacy_imports
-            SET last_error = 'Transcript hydration failed; retry on next open.'
-            WHERE thread_id = ${row.thread_id}
-          `.pipe(
-            Effect.as({ importedThreadCount: 0, importedMessageCount: 0 }),
-            Effect.orElseSucceed(() => ({
-              importedThreadCount: 0,
-              importedMessageCount: 0,
-            })),
-          ),
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterrupts(cause),
+          (cause) =>
+            Effect.logWarning("Failed to hydrate migrated v1 thread transcript", {
+              threadId: row.thread_id,
+              cause,
+            }).pipe(
+              Effect.andThen(() =>
+                sql`
+                    UPDATE orchestration_v2_legacy_imports
+                    SET last_error = 'Transcript hydration failed; retry on next open.'
+                    WHERE thread_id = ${row.thread_id}
+                  `.pipe(
+                  Effect.catchCauseIf(
+                    (cause) => !Cause.hasInterrupts(cause),
+                    () => Effect.void,
+                  ),
+                ),
+              ),
+              Effect.as({ importedThreadCount: 0, importedMessageCount: 0 }),
+            ),
         ),
       );
       importedThreadCount += result.importedThreadCount;
@@ -1015,9 +809,11 @@ const make = Effect.gen(function* () {
     return { importedThreadCount, importedMessageCount };
   }).pipe(
     Effect.catchCause((cause) =>
-      Effect.logWarning("Legacy v1 transcript background import stopped", { cause }).pipe(
-        Effect.as({ importedThreadCount: 0, importedMessageCount: 0 }),
-      ),
+      Cause.hasInterrupts(cause)
+        ? Effect.failCause(Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)))
+        : Effect.logWarning("Legacy v1 transcript background import stopped", { cause }).pipe(
+            Effect.as({ importedThreadCount: 0, importedMessageCount: 0 }),
+          ),
     ),
   );
 
