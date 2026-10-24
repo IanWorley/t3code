@@ -27,7 +27,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
-import { windowsSystemTar } from "./build-cli-archive.ts";
+import { windowsSystemTar } from "./lib/windows-tar.ts";
 
 /** File stem of the staged package dir and tarball; scoped names would nest a directory. */
 const LAUNCHER_ARTIFACT_NAME = "t3";

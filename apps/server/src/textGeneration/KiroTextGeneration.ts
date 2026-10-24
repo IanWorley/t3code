@@ -41,24 +41,24 @@ export const makeKiroTextGeneration = Effect.fn("makeKiroTextGeneration")(functi
   const commandSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const resolvedEnvironment = environment ?? process.env;
 
-  const runKiroJson = <S extends Schema.Top>({
-    operation,
-    cwd,
-    prompt,
-    outputSchemaJson,
-    modelSelection,
-  }: {
-    operation:
-      | "generateCommitMessage"
-      | "generatePrContent"
-      | "generateBranchName"
-      | "generateThreadTitle";
-    cwd: string;
-    prompt: string;
-    outputSchemaJson: S;
-    modelSelection: ModelSelection;
-  }): Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]> =>
-    Effect.gen(function* () {
+  const runKiroJson = Effect.fn("KiroTextGeneration.runJson")(
+    function* <S extends Schema.Top>({
+      operation,
+      cwd,
+      prompt,
+      outputSchemaJson,
+      modelSelection,
+    }: {
+      operation:
+        | "generateCommitMessage"
+        | "generatePrContent"
+        | "generateBranchName"
+        | "generateThreadTitle";
+      cwd: string;
+      prompt: string;
+      outputSchemaJson: S;
+      modelSelection: ModelSelection;
+    }) {
       const outputRef = yield* Ref.make("");
       const runtime = yield* makeKiroAcpRuntime({
         kiroSettings,
@@ -150,18 +150,21 @@ export const makeKiroTextGeneration = Effect.fn("makeKiroTextGeneration")(functi
             ),
         }),
       );
-    }).pipe(
-      Effect.mapError((cause) =>
-        isTextGenerationError(cause)
-          ? cause
-          : new TextGenerationError({
-              operation,
-              detail: "Kiro ACP text generation failed.",
-              cause,
-            }),
+    },
+    (effect, { operation }) =>
+      effect.pipe(
+        Effect.mapError((cause) =>
+          isTextGenerationError(cause)
+            ? cause
+            : new TextGenerationError({
+                operation,
+                detail: "Kiro ACP text generation failed.",
+                cause,
+              }),
+        ),
+        Effect.scoped,
       ),
-      Effect.scoped,
-    );
+  );
 
   const generateCommitMessage: TextGeneration.TextGeneration["Service"]["generateCommitMessage"] =
     Effect.fn("KiroTextGeneration.generateCommitMessage")(function* (input) {

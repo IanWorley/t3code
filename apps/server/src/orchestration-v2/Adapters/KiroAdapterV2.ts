@@ -169,26 +169,28 @@ export function makeKiroAdapterV2(options: KiroAdapterV2Options) {
         selections: modelSelection.options,
         mapError: ({ cause }) => cause,
       }).pipe(Effect.as(resolveKiroAcpBaseModelId(modelSelection.model))),
-    applySessionMode: ({ runtime, runtimePolicy }) =>
-      Effect.gen(function* () {
-        const modeState = yield* runtime.getModeState;
-        if (!defaultModes.has(runtime)) {
-          defaultModes.set(
-            runtime,
-            resolveKiroRequestedModeId({
-              interactionMode: "default",
-              modeState,
-              defaultModeId: undefined,
-            }),
-          );
-        }
-        const mode = resolveKiroRequestedModeId({
-          interactionMode: runtimePolicy.interactionMode,
-          modeState,
-          defaultModeId: defaultModes.get(runtime),
-        });
-        if (mode !== undefined && mode !== modeState?.currentModeId) yield* runtime.setMode(mode);
-      }),
+    applySessionMode: Effect.fn("KiroAdapterV2.applySessionMode")(function* ({
+      runtime,
+      runtimePolicy,
+    }) {
+      const modeState = yield* runtime.getModeState;
+      if (!defaultModes.has(runtime)) {
+        defaultModes.set(
+          runtime,
+          resolveKiroRequestedModeId({
+            interactionMode: "default",
+            modeState,
+            defaultModeId: undefined,
+          }),
+        );
+      }
+      const mode = resolveKiroRequestedModeId({
+        interactionMode: runtimePolicy.interactionMode,
+        modeState,
+        defaultModeId: defaultModes.get(runtime),
+      });
+      if (mode !== undefined && mode !== modeState?.currentModeId) yield* runtime.setMode(mode);
+    }),
     makeRuntime:
       options.makeRuntime ??
       (({ runtimePolicy, ...input }) =>
@@ -199,37 +201,41 @@ export function makeKiroAdapterV2(options: KiroAdapterV2Options) {
           childProcessSpawner: options.childProcessSpawner,
           runtimeMode: runtimePolicy.runtimeMode,
         })),
-    registerExtensions: ({ runtime, scope, currentTurn, updateSubagent }) =>
-      Effect.gen(function* () {
-        const updates = new Map<string, AcpAdapterV2SubagentUpdate>();
-        const tracker = yield* makeKiroSubagents({
-          runtime,
-          scope,
-          threadId: ThreadId.make("kiro-session"),
-          getTurn: () => undefined,
-          resolveTurn: currentTurn,
-          makeStamp: () =>
-            DateTime.now.pipe(
-              Effect.map((now) => ({
-                eventId: EventId.make(`kiro:${DateTime.toEpochMillis(now)}`),
-                createdAt: DateTime.formatIso(now),
-              })),
-            ),
-          publish: (event) => {
-            if (
-              event.type !== "task.started" &&
-              event.type !== "task.progress" &&
-              event.type !== "task.updated" &&
-              event.type !== "task.completed"
-            )
-              return Effect.void;
-            const update = kiroTaskEventToSubagentUpdate(event, updates.get(event.payload.taskId));
-            updates.set(event.payload.taskId, update);
-            return updateSubagent(update);
-          },
-        });
-        yield* Scope.addFinalizer(scope, tracker.close("interrupted"));
-      }),
+    registerExtensions: Effect.fn("KiroAdapterV2.registerExtensions")(function* ({
+      runtime,
+      scope,
+      currentTurn,
+      updateSubagent,
+    }) {
+      const updates = new Map<string, AcpAdapterV2SubagentUpdate>();
+      const tracker = yield* makeKiroSubagents({
+        runtime,
+        scope,
+        threadId: ThreadId.make("kiro-session"),
+        getTurn: () => undefined,
+        resolveTurn: currentTurn,
+        makeStamp: () =>
+          DateTime.now.pipe(
+            Effect.map((now) => ({
+              eventId: EventId.make(`kiro:${DateTime.toEpochMillis(now)}`),
+              createdAt: DateTime.formatIso(now),
+            })),
+          ),
+        publish: (event) => {
+          if (
+            event.type !== "task.started" &&
+            event.type !== "task.progress" &&
+            event.type !== "task.updated" &&
+            event.type !== "task.completed"
+          )
+            return Effect.void;
+          const update = kiroTaskEventToSubagentUpdate(event, updates.get(event.payload.taskId));
+          updates.set(event.payload.taskId, update);
+          return updateSubagent(update);
+        },
+      });
+      yield* Scope.addFinalizer(scope, tracker.close("interrupted"));
+    }),
   };
   return makeAcpAdapterV2({
     instanceId: options.instanceId,

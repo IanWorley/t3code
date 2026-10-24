@@ -164,16 +164,16 @@ export const makeKiroSubagents = Effect.fn("makeKiroSubagents")(function* <E>(in
       ),
     );
 
-  const publish = (child: Child, draft: TaskDraft) =>
-    Effect.gen(function* () {
-      yield* input.publish({
-        ...draft,
-        ...(yield* input.makeStamp()),
-        provider: PROVIDER,
-        threadId: input.threadId,
-        ...(child.turnId !== undefined ? { turnId: child.turnId } : {}),
-      });
+  // Child activity streams per chat chunk; a span per publish would swamp tracing.
+  const publish = Effect.fnUntraced(function* (child: Child, draft: TaskDraft) {
+    yield* input.publish({
+      ...draft,
+      ...(yield* input.makeStamp()),
+      provider: PROVIDER,
+      threadId: input.threadId,
+      ...(child.turnId !== undefined ? { turnId: child.turnId } : {}),
     });
+  });
   const linkage = (child: Child) => ({ taskId: child.taskId, ...child.linkage });
   const flushObservation = Effect.fnUntraced(function* (child: Child) {
     if (!child.observationDirty) return;
@@ -203,16 +203,15 @@ export const makeKiroSubagents = Effect.fn("makeKiroSubagents")(function* <E>(in
         );
     }
   }).pipe(Effect.forkIn(input.scope));
-  const complete = (child: Child) =>
-    Effect.gen(function* () {
-      if (child.state !== "terminated" || child.summary === undefined) return;
-      yield* flushObservation(child);
-      child.state = "completed";
-      yield* publish(child, {
-        type: "task.completed",
-        payload: { ...linkage(child), status: "completed", summary: child.summary },
-      });
+  const complete = Effect.fnUntraced(function* (child: Child) {
+    if (child.state !== "terminated" || child.summary === undefined) return;
+    yield* flushObservation(child);
+    child.state = "completed";
+    yield* publish(child, {
+      type: "task.completed",
+      payload: { ...linkage(child), status: "completed", summary: child.summary },
     });
+  });
 
   // Decode members separately: one malformed or newer member must not fail the root prompt.
   yield* input.runtime.handleExtNotification(LIST_UPDATE_METHOD, Schema.Unknown, (payload) =>

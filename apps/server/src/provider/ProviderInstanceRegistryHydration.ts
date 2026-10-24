@@ -84,26 +84,29 @@ export const deriveProviderInstanceConfigMap = (
   return merged as ProviderInstanceEntryMap;
 };
 
-const layerSettingsWatcher = Layer.effectDiscard(
-  Effect.gen(function* () {
-    const mutator = yield* ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator;
-    const serverSettings = yield* Settings.ServerSettingsService;
-    const settingsChanges = yield* serverSettings.subscribeChanges;
-    const { devProxy } = yield* ServerConfig.ServerConfig;
-    yield* settingsChanges.pipe(
-      Stream.runForEach((next) =>
-        mutator
-          .reconcile(deriveProviderInstanceConfigMap(next, devProxy))
-          .pipe(
+const layerSettingsWatcher = (settingsChanges: Stream.Stream<ServerSettings>) =>
+  Layer.effectDiscard(
+    Effect.gen(function* () {
+      const mutator = yield* ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator;
+      const serverSettings = yield* Settings.ServerSettingsService;
+      const { devProxy } = yield* ServerConfig.ServerConfig;
+      yield* settingsChanges.pipe(
+        Stream.runForEach(() =>
+          // The subscription predates the seed read, so a queued change can be
+          // older than the seed. A failed current read must leave the registry intact.
+          serverSettings.getSettings.pipe(
+            Effect.flatMap((current) =>
+              mutator.reconcile(deriveProviderInstanceConfigMap(current, devProxy)),
+            ),
             Effect.catchCause((cause) =>
               Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
             ),
           ),
-      ),
-      Effect.forkScoped,
-    );
-  }),
-);
+        ),
+        Effect.forkScoped,
+      );
+    }),
+  );
 
 export const layer: Layer.Layer<
   ProviderInstanceRegistry.ProviderInstanceRegistry,
@@ -112,6 +115,8 @@ export const layer: Layer.Layer<
 > = Layer.unwrap(
   Effect.gen(function* () {
     const serverSettings = yield* Settings.ServerSettingsService;
+    // Subscribe before the seed read so saves during registry construction are queued.
+    const settingsChanges = yield* serverSettings.subscribeChanges;
     const initialSettings: ServerSettings | undefined = yield* serverSettings.getSettings.pipe(
       Effect.orElseSucceed(() => undefined),
     );
@@ -136,7 +141,7 @@ export const layer: Layer.Layer<
       Layer.provide(ProviderHostLive.layer),
     );
 
-    return layerSettingsWatcher.pipe(Layer.provideMerge(layerMutable));
+    return layerSettingsWatcher(settingsChanges).pipe(Layer.provideMerge(layerMutable));
   }),
 ) as Layer.Layer<
   ProviderInstanceRegistry.ProviderInstanceRegistry,

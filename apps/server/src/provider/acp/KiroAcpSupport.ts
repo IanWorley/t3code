@@ -48,39 +48,40 @@ export function buildKiroAcpSpawnInput(
   };
 }
 
-export const makeKiroAcpRuntime = (
+export const makeKiroAcpRuntime = Effect.fn("makeKiroAcpRuntime")(function* (
   input: KiroAcpRuntimeInput,
-): Effect.Effect<
+): Effect.fn.Return<
   AcpSessionRuntime.AcpSessionRuntime["Service"],
   EffectAcpErrors.AcpError,
   Crypto.Crypto | Scope.Scope
-> =>
-  Effect.gen(function* () {
-    const acpContext = yield* Layer.build(
-      AcpSessionRuntime.layer({
-        ...input,
-        spawn: buildKiroAcpSpawnInput(
-          input.kiroSettings,
-          input.cwd,
-          input.environment,
-          input.runtimeMode,
-        ),
-      }).pipe(
-        Layer.provide(
-          Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, input.childProcessSpawner),
-        ),
+> {
+  const acpContext = yield* Layer.build(
+    AcpSessionRuntime.layer({
+      ...input,
+      spawn: buildKiroAcpSpawnInput(
+        input.kiroSettings,
+        input.cwd,
+        input.environment,
+        input.runtimeMode,
       ),
-    );
-    return yield* Effect.service(AcpSessionRuntime.AcpSessionRuntime).pipe(
-      Effect.provide(acpContext),
-    );
-  });
+    }).pipe(
+      Layer.provide(
+        Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, input.childProcessSpawner),
+      ),
+    ),
+  );
+  return yield* Effect.service(AcpSessionRuntime.AcpSessionRuntime).pipe(
+    Effect.provide(acpContext),
+  );
+});
 
 export function resolveKiroAcpBaseModelId(model: string | null | undefined): string {
   return normalizeModelSlug(model?.trim() || "auto", KIRO_DRIVER_KIND) ?? "auto";
 }
 
-export function applyKiroAcpModelSelection<E>(input: {
+export const applyKiroAcpModelSelection = Effect.fn("applyKiroAcpModelSelection")(function* <
+  E,
+>(input: {
   readonly runtime: Pick<
     AcpSessionRuntime.AcpSessionRuntime["Service"],
     "request" | "setSessionModel"
@@ -92,20 +93,18 @@ export function applyKiroAcpModelSelection<E>(input: {
     readonly cause: EffectAcpErrors.AcpError;
     readonly step: "set-effort" | "set-model";
   }) => E;
-}): Effect.Effect<void, E> {
-  return Effect.gen(function* () {
-    yield* input.runtime
-      .setSessionModel(resolveKiroAcpBaseModelId(input.model))
-      .pipe(Effect.mapError((cause) => input.mapError({ cause, step: "set-model" })));
+}): Effect.fn.Return<void, E> {
+  yield* input.runtime
+    .setSessionModel(resolveKiroAcpBaseModelId(input.model))
+    .pipe(Effect.mapError((cause) => input.mapError({ cause, step: "set-model" })));
 
-    const effort = getProviderOptionStringSelectionValue(
-      input.selections,
-      KIRO_EFFORT_OPTION_ID,
-    )?.trim();
-    if (effort) {
-      yield* setKiroEffort(input.runtime, input.sessionId, effort).pipe(
-        Effect.mapError((cause) => input.mapError({ cause, step: "set-effort" })),
-      );
-    }
-  });
-}
+  const effort = getProviderOptionStringSelectionValue(
+    input.selections,
+    KIRO_EFFORT_OPTION_ID,
+  )?.trim();
+  if (effort) {
+    yield* setKiroEffort(input.runtime, input.sessionId, effort).pipe(
+      Effect.mapError((cause) => input.mapError({ cause, step: "set-effort" })),
+    );
+  }
+});
