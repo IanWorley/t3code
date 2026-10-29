@@ -5,7 +5,6 @@ import {
   TurnId,
   TaskAgentObservation,
   TASK_OBSERVATION_TEXT_LIMIT,
-  ProviderRuntimeEvent,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
@@ -20,13 +19,14 @@ import { kiroTaskEventToSubagentUpdate } from "../../orchestration-v2/Adapters/K
 import type { AcpAdapterV2SubagentUpdate } from "@t3tools/provider-acp/server/adapter";
 import capture from "../testFixtures/kiroSubagents.json" with { type: "json" };
 import { makeKiroSubagents } from "./KiroSubagents.ts";
+import { KiroTaskEvent } from "./KiroTaskEvents.ts";
 
 const FIRST_TURN = TurnId.make("kiro-first-turn");
 const SECOND_TURN = TurnId.make("kiro-second-turn");
 const STARTED_AT = Date.parse("2026-09-30T00:00:00.000Z");
 const LIST_METHOD = "_kiro.dev/subagent/list_update";
 const decodeNotification = Schema.decodeUnknownEffect(AcpSchema.SessionNotification);
-const encodeEvents = Schema.encodeEffect(Schema.fromJsonString(Schema.Array(ProviderRuntimeEvent)));
+const encodeEvents = Schema.encodeEffect(Schema.fromJsonString(Schema.Array(KiroTaskEvent)));
 const encodeActivities = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const observationCodec = Schema.fromJsonString(TaskAgentObservation);
 const encodeObservation = Schema.encodeEffect(observationCodec);
@@ -39,7 +39,7 @@ const makeHarness = Effect.fnUntraced(function* () {
   ) => Effect.Effect<void, AcpError.AcpError> = () => Effect.void;
   let turn = { id: FIRST_TURN, startedAtMs: STARTED_AT };
   let sequence = 0;
-  const events: ProviderRuntimeEvent[] = [];
+  const events: KiroTaskEvent[] = [];
   const observations = yield* Queue.unbounded<TaskAgentObservation>();
   const children = yield* makeKiroSubagents({
     runtime: {
@@ -125,20 +125,13 @@ function summaryUpdate(sessionId: string, completed: boolean) {
   };
 }
 
-function projectedActivities(events: ReadonlyArray<ProviderRuntimeEvent>) {
+function projectedActivities(events: ReadonlyArray<KiroTaskEvent>) {
   const updates = new Map<string, AcpAdapterV2SubagentUpdate>();
   for (const event of events) {
-    if (
-      event.type === "task.started" ||
-      event.type === "task.progress" ||
-      event.type === "task.updated" ||
-      event.type === "task.completed"
-    ) {
-      updates.set(
-        event.payload.taskId,
-        kiroTaskEventToSubagentUpdate(event, updates.get(event.payload.taskId)),
-      );
-    }
+    updates.set(
+      event.payload.taskId,
+      kiroTaskEventToSubagentUpdate(event, updates.get(event.payload.taskId)),
+    );
   }
   return [...updates.values()];
 }

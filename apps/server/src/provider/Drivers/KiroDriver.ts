@@ -153,17 +153,15 @@ export const KiroDriver: ProviderDriver<KiroSettings, KiroDriverEnv> = {
     const textGeneration = yield* makeKiroTextGeneration(effectiveConfig, processEnv);
 
     const checkProvider = checkKiroProviderStatus(effectiveConfig, processEnv, cwd).pipe(
-      Effect.flatMap((snapshot) =>
-        enabled
-          ? readSkills(cwd).pipe(
-              Effect.map((skills) => ({ ...snapshot, skills })),
-              Effect.catch((cause) =>
-                Effect.logWarning("Could not read Kiro skills", { cause }).pipe(
-                  Effect.as(snapshot),
-                ),
-              ),
-            )
-          : Effect.succeed(snapshot),
+      Effect.filterOrElse(
+        () => !enabled,
+        (snapshot) =>
+          readSkills(cwd).pipe(
+            Effect.map((skills) => ({ ...snapshot, skills })),
+            Effect.catch((cause) =>
+              Effect.logWarning("Could not read Kiro skills", { cause }).pipe(Effect.as(snapshot)),
+            ),
+          ),
       ),
       Effect.map(stampIdentity),
       Effect.provideService(Crypto.Crypto, crypto),

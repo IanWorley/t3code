@@ -1,11 +1,8 @@
 import {
   ProviderDriverKind,
-  RuntimeTaskId,
   TASK_OBSERVATION_ENTRY_LIMIT,
   TASK_OBSERVATION_TEXT_LIMIT,
   type TaskAgentObservation,
-  type ProviderRuntimeEvent,
-  type TaskAgentLinkage,
   type ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
@@ -21,6 +18,8 @@ import * as AcpErrors from "effect-acp/errors";
 
 import type { AcpSessionRuntime } from "@t3tools/provider-acp/server/AcpSessionRuntime";
 import { sessionUpdateIsReplay } from "@t3tools/provider-acp/server/runtimeModel";
+
+import type { KiroTaskEvent, KiroTaskLinkage } from "./KiroTaskEvents.ts";
 
 const PROVIDER = ProviderDriverKind.make("kiro");
 const LIST_UPDATE_METHOD = "_kiro.dev/subagent/list_update";
@@ -49,19 +48,15 @@ const decodeChild = Schema.decodeUnknownOption(NativeChild);
 const decodeSummaryMeta = Schema.decodeUnknownOption(SummaryMeta);
 const decodeSummaryInput = Schema.decodeUnknownOption(SummaryInput);
 
-type TaskEvent = Extract<
-  ProviderRuntimeEvent,
-  { type: "task.started" | "task.progress" | "task.updated" | "task.completed" }
->;
-type TaskDraft = TaskEvent extends infer E
-  ? E extends TaskEvent
+type TaskDraft = KiroTaskEvent extends infer E
+  ? E extends KiroTaskEvent
     ? Pick<E, "type" | "payload">
     : never
   : never;
 
 interface Child {
-  readonly taskId: RuntimeTaskId;
-  readonly linkage: TaskAgentLinkage;
+  readonly taskId: string;
+  readonly linkage: KiroTaskLinkage;
   readonly turnId: TurnId | undefined;
   readonly description: string;
   state: "active" | "terminated" | "completed" | "closed";
@@ -146,8 +141,8 @@ export const makeKiroSubagents = Effect.fn("makeKiroSubagents")(function* <E>(in
   readonly resolveTurn?: Effect.Effect<
     { readonly id: TurnId; readonly startedAtMs: number } | undefined
   >;
-  readonly makeStamp: () => Effect.Effect<Pick<ProviderRuntimeEvent, "eventId" | "createdAt">, E>;
-  readonly publish: (event: ProviderRuntimeEvent) => Effect.Effect<void>;
+  readonly makeStamp: () => Effect.Effect<Pick<KiroTaskEvent, "eventId" | "createdAt">, E>;
+  readonly publish: (event: KiroTaskEvent) => Effect.Effect<void>;
 }): Effect.fn.Return<KiroSubagents<E>> {
   const children = new Map<string, Child>();
   const lock = yield* Semaphore.make(1);
@@ -229,7 +224,7 @@ export const makeKiroSubagents = Effect.fn("makeKiroSubagents")(function* <E>(in
               const turn =
                 input.resolveTurn === undefined ? input.getTurn() : yield* input.resolveTurn;
               child = {
-                taskId: RuntimeTaskId.make(native.sessionId),
+                taskId: native.sessionId,
                 linkage: {
                   taskType: "subagent",
                   title: bounded(native.sessionName) ?? DEFAULT_TITLE,

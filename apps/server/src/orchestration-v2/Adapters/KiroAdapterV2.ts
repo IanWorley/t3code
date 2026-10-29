@@ -5,7 +5,6 @@ import {
   KiroSettings,
   ProviderDriverKind,
   ThreadId,
-  type ProviderRuntimeEvent,
   type OrchestrationV2ProviderCapabilities,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
@@ -27,6 +26,7 @@ import {
   resolveKiroAcpBaseModelId,
 } from "../../provider/acp/KiroAcpSupport.ts";
 import { makeKiroSubagents } from "../../provider/acp/KiroSubagents.ts";
+import type { KiroTaskEvent } from "../../provider/acp/KiroTaskEvents.ts";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -66,10 +66,6 @@ export const KiroProviderCapabilitiesV2 = {
   },
 } satisfies OrchestrationV2ProviderCapabilities;
 
-type KiroTaskEvent = Extract<
-  ProviderRuntimeEvent,
-  { type: "task.started" | "task.progress" | "task.updated" | "task.completed" }
->;
 export function kiroTaskEventToSubagentUpdate(
   event: KiroTaskEvent,
   previous?: AcpAdapterV2SubagentUpdate,
@@ -222,13 +218,6 @@ export function makeKiroAdapterV2(options: KiroAdapterV2Options) {
             })),
           ),
         publish: (event) => {
-          if (
-            event.type !== "task.started" &&
-            event.type !== "task.progress" &&
-            event.type !== "task.updated" &&
-            event.type !== "task.completed"
-          )
-            return Effect.void;
           const update = kiroTaskEventToSubagentUpdate(event, updates.get(event.payload.taskId));
           updates.set(event.payload.taskId, update);
           return updateSubagent(update);
