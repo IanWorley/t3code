@@ -74,6 +74,11 @@ const ORPHAN_WORKTREE_GRACE_MS = 60 * 60 * 1_000;
 
 const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 const REPORT_ENTRY_LIMIT = 200;
+// Newer Git reports a `.git` file pointing nowhere as an invalid gitfile, not a missing repository.
+const NOT_A_REPOSITORY_DIAGNOSTICS = [
+  "not a git repository",
+  "gitfile does not point to a valid repository",
+];
 const isGitCommandError = Schema.is(GitCommandError);
 
 function cleanupFailureReason(error: { readonly message: string }) {
@@ -545,7 +550,9 @@ const make = Effect.gen(function* () {
         );
       if (result === null) return null;
       if (result.exitCode === 0 || result.exitCode === allowedExitCode) return result;
-      if (result.stderr.toLowerCase().includes("not a git repository")) return null;
+      const stderr = result.stderr.toLowerCase();
+      if (NOT_A_REPOSITORY_DIAGNOSTICS.some((diagnostic) => stderr.includes(diagnostic)))
+        return null;
       return yield* failure(
         result.stderr.trim().split(/\r?\n/)[0]?.slice(0, 1000) || "command failed",
       );
