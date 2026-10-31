@@ -331,8 +331,9 @@ jobs:
             node apps/web/node_modules/playwright/cli.js install-deps chromium
           fi
 
+      # The fork's 4 vCPU runner is about half the speed of upstream's 8 vCPU one, so double the 15s test limit.
       - name: Test
-        run: vp run --filter @t3tools/web test
+        run: vp run --filter @t3tools/web test --testTimeout=30000
 
       # Browser tests run source modules; this boots the production chunk graph.
       - name: Boot the built web client
