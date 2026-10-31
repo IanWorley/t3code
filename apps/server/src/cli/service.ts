@@ -259,7 +259,9 @@ const serviceRestartCommand = Command.make("restart", projectLocationFlags).pipe
         const status = yield* service.status;
         const outcome = yield* service.restart;
         const onVersion =
-          status.installedVersion === undefined ? "" : ` on ${NPM_PACKAGE_NAME}@${status.installedVersion}`;
+          status.installedVersion === undefined
+            ? ""
+            : ` on ${NPM_PACKAGE_NAME}@${status.installedVersion}`;
         yield* Console.log(
           outcome === "restarted"
             ? `Restarted the T3 Code service${onVersion}.`
