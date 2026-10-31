@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ServerNpmReleaseError } from "@t3tools/contracts";
+import { NPM_PACKAGE_NAME } from "@t3tools/shared/cliRelease";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -81,7 +82,14 @@ it.effect.each([
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({
       command: expect.stringMatching(/[/\\]npm(?:\.cmd)?$/i),
-      args: ["view", "--global", "--json", `t3@${fixture.spec}`, "version", "t3code"],
+      args: [
+        "view",
+        "--global",
+        "--json",
+        `${NPM_PACKAGE_NAME}@${fixture.spec}`,
+        "version",
+        "t3code",
+      ],
       maxOutputBytes: 256 * 1024,
     });
     yield* TestClock.adjust("1 minute");
@@ -153,9 +161,9 @@ it.effect("falls back to public npm only when npm is not installed", () =>
     yield* TestClock.adjust("15 seconds");
     expect(Result.isFailure(yield* Fiber.join(stalled))).toBe(true);
     expect(urls).toEqual([
-      "https://registry.npmjs.org/t3/nightly",
-      "https://registry.npmjs.org/t3/9.9.9",
-      "https://registry.npmjs.org/t3/latest",
+      `https://registry.npmjs.org/${NPM_PACKAGE_NAME}/nightly`,
+      `https://registry.npmjs.org/${NPM_PACKAGE_NAME}/9.9.9`,
+      `https://registry.npmjs.org/${NPM_PACKAGE_NAME}/latest`,
     ]);
   }),
 );
