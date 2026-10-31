@@ -6,7 +6,8 @@ import { compareSemverVersions } from "./semver.ts";
 export const NPM_PACKAGE_NAME = "@ianworleyxyz/t3";
 
 const CLI_RELEASE_REPOSITORY = "IanWorley/t3code";
-export const CLI_RELEASES_PAGE_URL = `https://github.com/${CLI_RELEASE_REPOSITORY}/releases`;
+export const CLI_REPOSITORY_URL = `https://github.com/${CLI_RELEASE_REPOSITORY}`;
+export const CLI_RELEASES_PAGE_URL = `${CLI_REPOSITORY_URL}/releases`;
 export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
 export const CLI_RELEASE_BASE_URL_ENV = "T3CODE_RELEASE_BASE_URL";
 

@@ -4,6 +4,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { NPM_PACKAGE_NAME } from "@t3tools/shared/cliRelease";
 import { useNavigation } from "@react-navigation/native";
 import * as Clipboard from "expo-clipboard";
 import Constants from "expo-constants";
@@ -20,7 +21,7 @@ import {
 } from "../../state/use-composer-drafts";
 import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
 
-const CLI_COMMAND = "npx t3 triage";
+const CLI_COMMAND = `npx ${NPM_PACKAGE_NAME} triage`;
 
 /**
  * In-app `t3 triage`, as on web: the server writes the session files and
