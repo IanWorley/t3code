@@ -125,30 +125,24 @@ export function parseKiroAuth(result: CommandResult): ServerProviderAuth {
   return email ? { status: "authenticated", email } : { status: "authenticated" };
 }
 
-function runKiroCommand(
+const runKiroCommand = Effect.fn("KiroProvider.runCommand")(function* (
   settings: KiroSettings,
   args: ReadonlyArray<string>,
   environment: NodeJS.ProcessEnv,
 ) {
-  return Effect.gen(function* () {
-    const command = settings.binaryPath || "kiro-cli";
-    const spawnCommand = yield* resolveSpawnCommand(command, args, { env: environment });
-    return yield* spawnAndCollect(
-      command,
-      ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-        env: environment,
-        shell: spawnCommand.shell,
-      }),
-    );
-  });
-}
+  const command = settings.binaryPath || "kiro-cli";
+  const spawnCommand = yield* resolveSpawnCommand(command, args, { env: environment });
+  return yield* spawnAndCollect(
+    command,
+    ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+      env: environment,
+      shell: spawnCommand.shell,
+    }),
+  );
+});
 
-const discoverKiroCapabilitiesViaAcp = (
-  settings: KiroSettings,
-  environment: NodeJS.ProcessEnv,
-  cwd: string,
-) =>
-  Effect.gen(function* () {
+const discoverKiroCapabilitiesViaAcp = Effect.fn("KiroProvider.discoverCapabilitiesViaAcp")(
+  function* (settings: KiroSettings, environment: NodeJS.ProcessEnv, cwd: string) {
     const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const acp = yield* makeKiroAcpRuntime({
       kiroSettings: settings,
@@ -176,12 +170,12 @@ const discoverKiroCapabilitiesViaAcp = (
       models: modelsFromSessionState(modelState, effortOptionsByModel),
       slashCommands: buildKiroSlashCommands(availableCommands),
     };
-  }).pipe(Effect.scoped);
+  },
+  Effect.scoped,
+);
 
-export function buildInitialKiroProviderSnapshot(
-  settings: KiroSettings,
-): Effect.Effect<ServerProviderDraft> {
-  return Effect.gen(function* () {
+export const buildInitialKiroProviderSnapshot = Effect.fn("buildInitialKiroProviderSnapshot")(
+  function* (settings: KiroSettings): Effect.fn.Return<ServerProviderDraft> {
     const checkedAt = DateTime.formatIso(yield* DateTime.now);
     const models = kiroModelsFromSettings(settings.customModels);
     return buildServerProvider({
@@ -205,8 +199,8 @@ export function buildInitialKiroProviderSnapshot(
             message: "Kiro is disabled in T3 Code settings.",
           },
     });
-  });
-}
+  },
+);
 
 export const checkKiroProviderStatus = Effect.fn("checkKiroProviderStatus")(function* (
   settings: KiroSettings,

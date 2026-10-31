@@ -121,7 +121,7 @@ export const resolveModelProxyRoute = (input: {
   readonly instanceId: ProviderInstanceId;
   readonly settings: ModelProxySettings | undefined;
 }): Effect.Effect<ModelProxyRoute | undefined, ProviderDriverError> => {
-  if (input.settings === undefined) return Effect.succeed(undefined);
+  if (input.settings === undefined) return Effect.undefined;
   const rootUrl = parseModelProxyUrl(input.settings.url);
   if (rootUrl === null) {
     return Effect.fail(

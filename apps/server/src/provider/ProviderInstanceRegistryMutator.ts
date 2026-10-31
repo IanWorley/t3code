@@ -1,9 +1,4 @@
-/**
- * Closes the per-instance `Scope` of every removed or replaced entry (tearing
- * down adapter processes, refresh fibres, temp files) BEFORE creating the
- * replacement — `reconcile` guarantees "at most one live instance per id" at
- * all times.
- */
+/** Reconcile closes removed/replaced scopes before creating replacements: at most one live instance per id. */
 import type {
   ModelProxySettings,
   ProviderInstanceConfig,
@@ -19,6 +14,8 @@ export type ProviderInstanceEntryMap = Readonly<Record<ProviderInstanceId, Provi
 
 export interface ProviderInstanceRegistryMutatorShape {
   readonly reconcile: (entries: ProviderInstanceEntryMap) => Effect.Effect<void>;
+  /** Re-reads the secrets of every instance, or one, and rebuilds those whose secrets changed. */
+  readonly reloadSecrets: (instanceId?: ProviderInstanceId) => Effect.Effect<void>;
 }
 
 export class ProviderInstanceRegistryMutator extends Context.Service<
