@@ -30,6 +30,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } fr
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerConfig from "../config.ts";
+import { NPM_PACKAGE_NAME } from "../npmPackage.ts";
 import { resolveBaseDir } from "../os-jank.ts";
 import {
   type PersistedServerRuntimeState,
@@ -72,7 +73,7 @@ export class NoRunningServerError extends Schema.TaggedError<NoRunningServerErro
       ...(this.inLinkedWorktree
         ? ["In a linked worktree, pass --base-dir to pair with a server outside it."]
         : []),
-      "Start one with `npx t3 serve`, or connect this machine with T3 Connect: `npx t3 connect`.",
+      `Start one with \`npx ${NPM_PACKAGE_NAME} serve\`, or connect this machine with T3 Connect: \`npx ${NPM_PACKAGE_NAME} connect\`.`,
     ].join("\n");
   }
 }
@@ -84,7 +85,7 @@ export class IncompatibleServerProtocolError extends Schema.TaggedError<Incompat
   override get message(): string {
     return [
       `The running T3 Code server (${this.serverVersion}) speaks orchestration protocol ${String(this.serverProtocolVersion)}, but this CLI speaks protocol ${String(ORCHESTRATION_PROTOCOL_VERSION)}.`,
-      `Pair with the matching CLI instead: \`npx t3@${this.serverVersion} pair\`.`,
+      `Pair with the matching CLI instead: \`npx ${NPM_PACKAGE_NAME}@${this.serverVersion} pair\`.`,
     ].join("\n");
   }
 }
