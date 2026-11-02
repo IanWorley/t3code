@@ -1,6 +1,7 @@
 import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import { describe, expect, it } from "@effect/vitest";
 
 import { codexExecLaunchArgs } from "./codexLaunchArgs.ts";
@@ -10,6 +11,7 @@ import {
   modelProxyCodexEnvironment,
   parseModelProxyUrl,
   resolveModelProxyRoute,
+  withModelProxyProbe,
 } from "./modelProxy.ts";
 
 const route = { rootUrl: "http://proxy.test:8317", apiKey: "proxy-key" };
@@ -85,7 +87,7 @@ describe("applyModelProxyProbe", () => {
   it("adds proxy-only models without duplicating harness models", () => {
     const next = applyModelProxyProbe(readySnapshot, {
       available: true,
-      models: ["gpt-5.5", "gpt-6.1-sol"],
+      models: [{ slug: "gpt-5.5" }, { slug: "gpt-6.1-sol" }],
     });
     expect(next.models.map((model) => [model.slug, model.subProvider])).toEqual([
       ["gpt-5.5", undefined],
@@ -97,7 +99,10 @@ describe("applyModelProxyProbe", () => {
   });
 
   it("keeps Claude models off Codex but offers GPT models to Claude", () => {
-    const probe = { available: true, models: ["claude-sonnet-5", "gpt-6.1-sol"] };
+    const probe = {
+      available: true,
+      models: [{ slug: "claude-sonnet-5" }, { slug: "gpt-6.1-sol" }],
+    };
     const proxySlugs = (snapshot: ServerProvider) =>
       applyModelProxyProbe(snapshot, probe)
         .models.filter((model) => model.subProvider === "Proxy")
@@ -123,7 +128,10 @@ describe("applyModelProxyProbe", () => {
         },
       ],
     } as ServerProvider;
-    const next = applyModelProxyProbe(snapshot, { available: true, models: ["sonnet"] });
+    const next = applyModelProxyProbe(snapshot, {
+      available: true,
+      models: [{ slug: "sonnet" }],
+    });
     expect(next.models.map((model) => model.slug)).toEqual(["claude-sonnet-5"]);
   });
 
@@ -139,4 +147,59 @@ describe("applyModelProxyProbe", () => {
       modelProxy: { status: "unavailable" },
     });
   });
+});
+
+describe("withModelProxyProbe", () => {
+  const catalog = {
+    models: [
+      {
+        slug: "kimi-k3",
+        supported_reasoning_levels: [{ effort: "none" }, { effort: "low" }, { effort: "high" }],
+        default_reasoning_level: "high",
+      },
+      { slug: "qwen-coder", supported_reasoning_levels: [] },
+    ],
+  };
+  const requestedUrls: Array<string> = [];
+  const httpClient = HttpClient.make((request) =>
+    Effect.sync(() => {
+      requestedUrls.push(request.url);
+      return HttpClientResponse.fromWeb(request, Response.json(catalog));
+    }),
+  );
+  const reasoningOptions = (driver: string) =>
+    withModelProxyProbe(
+      route,
+      httpClient,
+      Effect.succeed({ ...readySnapshot, driver: ProviderDriverKind.make(driver) }),
+    ).pipe(
+      Effect.map((snapshot) =>
+        Object.fromEntries(
+          snapshot.models
+            .filter((model) => model.subProvider === "Proxy")
+            .map((model) => {
+              const descriptor = model.capabilities?.optionDescriptors?.[0];
+              const options = descriptor?.type === "select" ? descriptor.options : [];
+              return [
+                model.slug,
+                options.map((option) => (option.isDefault ? `${option.id}*` : option.id)),
+              ];
+            }),
+        ),
+      ),
+    );
+
+  it.effect("offers the reasoning levels the proxy reports in each harness's vocabulary", () =>
+    Effect.gen(function* () {
+      expect(yield* reasoningOptions("codex")).toEqual({
+        "kimi-k3": ["none", "low", "high*"],
+        "qwen-coder": [],
+      });
+      expect(yield* reasoningOptions("claudeAgent")).toEqual({
+        "kimi-k3": ["low", "high*"],
+        "qwen-coder": [],
+      });
+      expect(requestedUrls[0]).toBe("http://proxy.test:8317/v1/models?client_version=");
+    }),
+  );
 });

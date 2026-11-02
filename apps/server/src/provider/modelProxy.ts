@@ -14,7 +14,9 @@ import { HttpClient, HttpClientRequest } from "effect/http";
 import { ProviderDriverError } from "./Errors.ts";
 import { resolveCodexLaunchArgs, T3CODE_CODEX_LAUNCH_ARGS_ENV } from "./codexLaunchArgs.ts";
 
-const MODELS_PATH = "/v1/models";
+// CLIProxyAPI answers a `client_version` request with its Codex catalog, which carries each model's
+// configured reasoning levels. Other proxies ignore the parameter and return the plain model list.
+const MODELS_PATH = "/v1/models?client_version=";
 const PROBE_TIMEOUT_MS = 2_000;
 const PROXY_MODEL_SUB_PROVIDER = "Proxy";
 const CLAUDE_MODEL_PREFIX = "claude-";
@@ -22,42 +24,33 @@ const offersProxyModel = (driver: ProviderDriverKind, slug: string) =>
   driver !== "codex" || !slug.startsWith(CLAUDE_MODEL_PREFIX);
 const REASONING_LABEL = "Reasoning";
 const DEFAULT_REASONING = "medium";
-const reasoningChoices = (levels: ReadonlyArray<readonly [id: string, label: string]>) =>
-  levels.map(([id, label]) => ({
-    id,
-    label,
-    ...(id === DEFAULT_REASONING ? { isDefault: true } : {}),
-  }));
-const SHARED_REASONING_LEVELS = [
-  ["low", "Low"],
-  ["medium", "Medium"],
-  ["high", "High"],
-  ["xhigh", "Extra High"],
-] as const;
-/**
- * The proxy's model list carries no capabilities, so proxy-only models get the reasoning option in
- * the harness's own vocabulary; the proxy maps it onto whichever model family serves the request.
- */
-const PROXY_MODEL_CAPABILITIES_BY_DRIVER: Readonly<Record<string, ModelCapabilities>> = {
+const REASONING_LEVEL_LABELS: Readonly<Record<string, string>> = {
+  none: "None",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra High",
+  max: "Max",
+  ultra: "Ultra",
+};
+interface ProxyReasoningOption {
+  readonly optionId: string;
+  /** Levels the harness accepts, in display order. */
+  readonly supported: ReadonlyArray<string>;
+  /** Offered when the proxy does not report a model's levels. */
+  readonly fallback: ReadonlyArray<string>;
+}
+const PROXY_REASONING_BY_DRIVER: Readonly<Record<string, ProxyReasoningOption>> = {
   codex: {
-    optionDescriptors: [
-      {
-        id: "reasoningEffort",
-        label: REASONING_LABEL,
-        type: "select",
-        options: reasoningChoices(SHARED_REASONING_LEVELS),
-      },
-    ],
+    optionId: "reasoningEffort",
+    supported: ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+    fallback: ["low", "medium", "high", "xhigh"],
   },
   claudeAgent: {
-    optionDescriptors: [
-      {
-        id: "effort",
-        label: REASONING_LABEL,
-        type: "select",
-        options: reasoningChoices([...SHARED_REASONING_LEVELS, ["max", "Max"]]),
-      },
-    ],
+    optionId: "effort",
+    supported: ["low", "medium", "high", "xhigh", "max"],
+    fallback: ["low", "medium", "high", "xhigh", "max"],
   },
 };
 const CODEX_PROVIDER_ID = "t3_model_proxy";
@@ -82,9 +75,20 @@ const CLAUDE_BACKEND_SELECTOR_ENV = [
   "CLAUDE_CODE_USE_VERTEX",
 ] as const;
 
-const ModelsResponse = Schema.Struct({
-  data: Schema.Array(Schema.Struct({ id: Schema.String })),
-});
+const ModelsResponse = Schema.Union([
+  Schema.Struct({
+    models: Schema.Array(
+      Schema.Struct({
+        slug: Schema.String,
+        supported_reasoning_levels: Schema.optional(
+          Schema.Array(Schema.Struct({ effort: Schema.String })),
+        ),
+        default_reasoning_level: Schema.optional(Schema.NullOr(Schema.String)),
+      }),
+    ),
+  }),
+  Schema.Struct({ data: Schema.Array(Schema.Struct({ id: Schema.String })) }),
+]);
 const decodeModelsResponse = Schema.decodeUnknownOption(ModelsResponse);
 
 export interface ModelProxyRoute {
@@ -93,9 +97,16 @@ export interface ModelProxyRoute {
   readonly apiKey: string | undefined;
 }
 
+interface ModelProxyModel {
+  readonly slug: string;
+  /** Undefined when the proxy does not report the model's levels. */
+  readonly reasoningLevels?: ReadonlyArray<string>;
+  readonly defaultReasoningLevel?: string;
+}
+
 interface ModelProxyProbe {
   readonly available: boolean;
-  readonly models: ReadonlyArray<string>;
+  readonly models: ReadonlyArray<ModelProxyModel>;
   readonly message?: string;
 }
 
@@ -206,9 +217,57 @@ const probeModelProxy = Effect.fn("probeModelProxy")(function* (route: ModelProx
   if (Option.isNone(payload)) {
     return unavailable("The model proxy returned a model list T3 Code could not read.");
   }
-  const models = new Set(payload.value.data.map((model) => model.id.trim()).filter(Boolean));
-  return { available: true, models: [...models] } satisfies ModelProxyProbe;
+  return { available: true, models: readProxyModels(payload.value) } satisfies ModelProxyProbe;
 });
+
+function readProxyModels(response: typeof ModelsResponse.Type): ReadonlyArray<ModelProxyModel> {
+  const models: ReadonlyArray<ModelProxyModel> =
+    "models" in response
+      ? response.models.map((model) => ({
+          slug: model.slug.trim(),
+          ...(model.supported_reasoning_levels
+            ? { reasoningLevels: model.supported_reasoning_levels.map((level) => level.effort) }
+            : {}),
+          ...(model.default_reasoning_level
+            ? { defaultReasoningLevel: model.default_reasoning_level }
+            : {}),
+        }))
+      : response.data.map((model) => ({ slug: model.id.trim() }));
+  const bySlug = new Map(models.filter((model) => model.slug).map((model) => [model.slug, model]));
+  return [...bySlug.values()];
+}
+
+function proxyModelCapabilities(
+  driver: ProviderDriverKind,
+  model: ModelProxyModel,
+): ModelCapabilities | null {
+  const reasoning = PROXY_REASONING_BY_DRIVER[driver];
+  if (reasoning === undefined) return null;
+  const reported = model.reasoningLevels;
+  const levels =
+    reported === undefined
+      ? reasoning.fallback
+      : reasoning.supported.filter((level) => reported.includes(level));
+  if (levels.length === 0) return { optionDescriptors: [] };
+  const defaultLevel =
+    [model.defaultReasoningLevel, DEFAULT_REASONING].find(
+      (level) => level !== undefined && levels.includes(level),
+    ) ?? levels[0];
+  return {
+    optionDescriptors: [
+      {
+        id: reasoning.optionId,
+        label: REASONING_LABEL,
+        type: "select",
+        options: levels.map((id) => ({
+          id,
+          label: REASONING_LEVEL_LABELS[id] ?? id,
+          ...(id === defaultLevel ? { isDefault: true } : {}),
+        })),
+      },
+    ],
+  };
+}
 
 export function applyModelProxyProbe(
   snapshot: ServerProvider,
@@ -216,13 +275,13 @@ export function applyModelProxyProbe(
 ): ServerProvider {
   const known = new Set(snapshot.models.flatMap((model) => [model.slug, ...(model.aliases ?? [])]));
   const proxyModels = probe.models
-    .filter((slug) => !known.has(slug) && offersProxyModel(snapshot.driver, slug))
-    .map((slug): ServerProviderModel => ({
-      slug,
-      name: slug,
+    .filter((model) => !known.has(model.slug) && offersProxyModel(snapshot.driver, model.slug))
+    .map((model): ServerProviderModel => ({
+      slug: model.slug,
+      name: model.slug,
       subProvider: PROXY_MODEL_SUB_PROVIDER,
       isCustom: false,
-      capabilities: PROXY_MODEL_CAPABILITIES_BY_DRIVER[snapshot.driver] ?? null,
+      capabilities: proxyModelCapabilities(snapshot.driver, model),
     }));
   const proxyWarning = probe.message !== undefined && snapshot.status === "ready";
   return {
