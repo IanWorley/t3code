@@ -24,7 +24,8 @@ Codex installation first.
 ## Models
 
 Models the proxy offers beyond the provider's own list appear in the model picker labelled
-**Proxy**, with a **Reasoning** option. Codex providers don't list the proxy's Claude models; use a
+**Proxy**. Their **Reasoning** levels follow each model's thinking levels in CLIProxyAPI, so change
+them there (for example in its Management Center). Codex providers don't list the proxy's Claude models; use a
 Claude provider for those. Hide any you don't want from the provider's **Models** section. Routed
 providers show a route icon in the model picker.
 
