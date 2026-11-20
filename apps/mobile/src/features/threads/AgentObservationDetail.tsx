@@ -6,21 +6,24 @@ import {
   formatSubagentTokenCount,
   type SubagentUsage,
 } from "@t3tools/client-runtime/state/subagentRuntime";
+import { msg, useGT, useMessages } from "gt-react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 
 const AGENT_CHAT_ENTRY_GAP = 12;
 
+const ENTRY_LABELS = {
+  user: msg("Task", { $context: "subagent chat entry: the prompt given to the agent" }),
+  assistant: msg("Reply", { $context: "subagent chat entry: the agent's response" }),
+  reasoning: msg("Reasoning", { $context: "subagent chat entry: the agent's thinking" }),
+  tool: msg("Tool", { $context: "subagent chat entry: a tool call" }),
+} satisfies Record<TaskAgentObservation["entries"][number]["kind"], string>;
+
 function AgentObservationEntry({ entry }: { entry: TaskAgentObservation["entries"][number] }) {
+  const gt = useGT();
+  const m = useMessages();
   const [expanded, setExpanded] = useState(false);
   const reasoning = entry.kind === "reasoning";
-  const label =
-    entry.kind === "user"
-      ? "Task"
-      : entry.kind === "assistant"
-        ? "Reply"
-        : entry.kind === "tool"
-          ? "Tool"
-          : "Reasoning";
+  const label = m(ENTRY_LABELS[entry.kind]);
   return (
     <View className="gap-1">
       {reasoning ? (
@@ -33,7 +36,7 @@ function AgentObservationEntry({ entry }: { entry: TaskAgentObservation["entries
           }}
         >
           <Text className="text-xs text-foreground-muted">
-            {expanded ? "Hide reasoning" : "Show reasoning"}
+            {expanded ? gt("Hide reasoning") : gt("Show reasoning")}
           </Text>
         </Pressable>
       ) : (
@@ -55,14 +58,16 @@ export function AgentObservationDetail({
   observation: TaskAgentObservation;
   usage: SubagentUsage | null | undefined;
 }) {
+  const gt = useGT();
+  const m = useMessages();
   const [expanded, setExpanded] = useState(false);
   return (
     <View className="gap-2 pl-3">
       <Text className="text-2xs text-foreground-muted">
-        {formatSubagentContextUsage(observation.contextUsage)} ·{" "}
+        {formatSubagentContextUsage(observation.contextUsage, m)} ·{" "}
         {usage?.outputTokens !== undefined
-          ? `${formatSubagentTokenCount(usage.outputTokens)} output tokens`
-          : "Output tokens unavailable"}
+          ? gt("{tokens} output tokens", { tokens: formatSubagentTokenCount(usage.outputTokens) })
+          : gt("Output tokens unavailable")}
       </Text>
       <Pressable
         accessibilityRole="button"
@@ -70,16 +75,20 @@ export function AgentObservationDetail({
         onPress={() => setExpanded((value) => !value)}
       >
         <Text className="text-xs text-foreground-muted">
-          {expanded ? "Hide observed chat" : "Show observed chat"}
+          {expanded ? gt("Hide observed chat") : gt("Show observed chat")}
         </Text>
       </Pressable>
       {expanded ? (
         <View className="gap-2">
           <Text className="text-2xs text-foreground-muted">
-            Recent observed chat.{observation.truncated ? " Earlier text was omitted." : ""}
+            {observation.truncated
+              ? gt("Recent observed chat. Earlier text was omitted.")
+              : gt("Recent observed chat.")}
           </Text>
           {observation.entries.length === 0 ? (
-            <Text className="text-xs text-foreground-muted">No chat output received yet.</Text>
+            <Text className="text-xs text-foreground-muted">
+              {gt("No chat output received yet.")}
+            </Text>
           ) : null}
           <ScrollView
             nestedScrollEnabled

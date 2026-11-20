@@ -9,6 +9,8 @@ import type {
   TaskAgentObservation,
 } from "@t3tools/contracts";
 import { isOrchestrationV2WorkActive, isProviderNativeSubagentThread } from "@t3tools/contracts";
+import { mFallback, msg } from "gt-i18n";
+import type { MFunctionType } from "gt-i18n/types";
 
 export type RuntimeSubagentStatus =
   | "pending"
@@ -97,6 +99,14 @@ export function isActiveSubagentStatus(status: RuntimeSubagentStatus): boolean {
 
 export function isLiveSubagentTurnItem(item: OrchestrationV2TurnItem): boolean {
   return item.type === "subagent" && isOrchestrationV2WorkActive(item.status);
+}
+
+export function waitingOnSubagentsLabel(count: number, resolve: MFunctionType = mFallback): string {
+  return resolve(
+    msg("{count, plural, =1 {Waiting on a subagent} other {Waiting on {count} subagents}}", {
+      count,
+    }),
+  );
 }
 
 export interface SubagentWorkflowGroup {
@@ -266,6 +276,7 @@ export function projectedSubagentsToRuntime(
 
 export function deriveWorkflowGroups(
   agents: ReadonlyArray<RuntimeSubagent>,
+  resolve: MFunctionType = mFallback,
 ): ReadonlyArray<SubagentWorkflowGroup> {
   const workflows = agents
     .filter((agent) => agent.kind === "workflow")
@@ -285,7 +296,9 @@ export function deriveWorkflowGroups(
       if (member.phaseIndex === null) continue;
       phaseTitles.set(
         member.phaseIndex,
-        member.phaseTitle ?? phaseTitles.get(member.phaseIndex) ?? `Phase ${member.phaseIndex + 1}`,
+        member.phaseTitle ??
+          phaseTitles.get(member.phaseIndex) ??
+          resolve(msg("Phase {number}", { number: member.phaseIndex + 1 })),
       );
     }
     for (const phase of workflow.phases) phaseTitles.set(phase.index, phase.title);
@@ -335,16 +348,26 @@ export function formatSubagentTokenCount(totalTokens: number): string {
   return `${(totalTokens / 1_000_000).toFixed(1)}M`;
 }
 
-export function formatSubagentContextUsage(context: TaskAgentObservation["contextUsage"]): string {
-  if (!context) return "Context unavailable";
+export function formatSubagentContextUsage(
+  context: TaskAgentObservation["contextUsage"],
+  resolve: MFunctionType = mFallback,
+): string {
+  if (!context) return resolve(msg("Context unavailable"));
   const used = formatSubagentTokenCount(context.usedTokens);
   return context.capacityTokens > 0
-    ? `Context ${used} / ${formatSubagentTokenCount(context.capacityTokens)} tokens`
-    : `Context ${used} tokens`;
+    ? resolve(
+        msg("Context {used} / {capacity} tokens", {
+          used,
+          capacity: formatSubagentTokenCount(context.capacityTokens),
+        }),
+      )
+    : resolve(msg("Context {used} tokens", { used }));
 }
 
 // Workflow scripts open with their `meta` export, after any leading comments.
-const WORKFLOW_SCRIPT_START = /^\s*(?:(?:\/\/[^\n]*|\/\*[\s\S]*?\*\/)\s*)*export\s+const\s+meta\b/;
+// Each comment has one way to match, so a prompt of `////` divider lines cannot backtrack.
+const WORKFLOW_SCRIPT_START =
+  /^\s*(?:(?:\/\/[^\r\n\u2028\u2029]*(?:[\r\n\u2028\u2029]|$)|\/\*(?:[^*]|\*(?!\/))*\*\/)\s*)*export\s+const\s+meta\b/;
 
 /**
  * Whether a user message is the script a provider-native workflow runs. Servers mark every
@@ -379,16 +402,19 @@ export interface WorkflowOpening {
  * shown as the workflow's plan. The coordinator row lives on the parent thread, so
  * `parentSubagents` is the parent projection's subagents, or null when it is not loaded.
  */
-export function resolveWorkflowOpening(input: {
-  readonly thread: Pick<OrchestrationV2AppThread, "id" | "lineage" | "creationSource">;
-  readonly messages: ReadonlyArray<{
-    readonly id: string;
-    readonly role: string;
-    readonly text: string;
-    readonly workflowScript?: boolean | undefined;
-  }>;
-  readonly parentSubagents: ReadonlyArray<ProjectedSubagent> | null;
-}): WorkflowOpening | null {
+export function resolveWorkflowOpening(
+  input: {
+    readonly thread: Pick<OrchestrationV2AppThread, "id" | "lineage" | "creationSource">;
+    readonly messages: ReadonlyArray<{
+      readonly id: string;
+      readonly role: string;
+      readonly text: string;
+      readonly workflowScript?: boolean | undefined;
+    }>;
+    readonly parentSubagents: ReadonlyArray<ProjectedSubagent> | null;
+  },
+  resolve: MFunctionType = mFallback,
+): WorkflowOpening | null {
   if (!isProviderNativeSubagentThread(input.thread)) return null;
   const first = input.messages.find((message) => message.role === "user");
   if (first === undefined) return null;
@@ -407,7 +433,7 @@ export function resolveWorkflowOpening(input: {
     group:
       coordinator?.workflow === undefined
         ? null
-        : (deriveWorkflowGroups(projectedSubagentsToRuntime([coordinator]))[0] ?? null),
+        : (deriveWorkflowGroups(projectedSubagentsToRuntime([coordinator]), resolve)[0] ?? null),
   };
 }
 
@@ -427,13 +453,23 @@ export function workflowOpeningParentThreadId(input: {
     : null;
 }
 
+const WORKFLOW_AGENT_COUNTS = {
+  working: msg("{count} working"),
+  done: msg("{count} done"),
+  failed: msg("{count} failed"),
+  stopped: msg("{count} stopped"),
+};
+
 /** The opening block's heading: the workflow, what it does, and how its agents stand. */
-export function workflowOpeningHeadline(opening: WorkflowOpening): {
+export function workflowOpeningHeadline(
+  opening: WorkflowOpening,
+  resolve: MFunctionType = mFallback,
+): {
   readonly title: string;
   readonly description: string | null;
   readonly agents: string | null;
 } {
-  const title = opening.name ?? opening.description ?? "Workflow";
+  const title = opening.name ?? opening.description ?? resolve(msg("Workflow"));
   const members =
     opening.group === null
       ? []
@@ -455,15 +491,16 @@ export function workflowOpeningHeadline(opening: WorkflowOpening): {
   const agents =
     members.length === 0
       ? null
-      : `${members.length} ${members.length === 1 ? "agent" : "agents"} · ${[
-          "working",
-          "done",
-          "failed",
-          "stopped",
-        ]
-          .filter((key) => counts.has(key))
-          .map((key) => `${counts.get(key)} ${key}`)
-          .join(" · ")}`;
+      : [
+          resolve(
+            msg("{count, plural, one {{count} agent} other {{count} agents}}", {
+              count: members.length,
+            }),
+          ),
+          ...(["working", "done", "failed", "stopped"] as const)
+            .filter((key) => counts.has(key))
+            .map((key) => resolve(WORKFLOW_AGENT_COUNTS[key], { count: counts.get(key)! })),
+        ].join(" · ");
   return {
     title,
     description:
